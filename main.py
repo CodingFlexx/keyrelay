@@ -26,11 +26,37 @@ logger = logging.getLogger(__name__)
 # Configuration - can be overridden via env var
 SECRETS_FILE = Path(os.getenv("SECRETS_FILE", "secrets.json"))
 
-# Target URLs
+# Target URLs - Extended with common AI and API services
 TARGETS = {
+    # LLM APIs
     "openrouter": "https://openrouter.ai/api/v1",
-    "github": "https://api.github.com",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta",
+    "groq": "https://api.groq.com/openai/v1",
+    "cohere": "https://api.cohere.com/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    
+    # Search & Data
     "brave": "https://api.search.brave.com",
+    "serpapi": "https://serpapi.com",
+    "tavily": "https://api.tavily.com",
+    
+    # Git & Dev
+    "github": "https://api.github.com",
+    "gitlab": "https://gitlab.com/api/v4",
+    
+    # Cloud & Storage
+    "aws": "https://sts.amazonaws.com",  # Placeholder - AWS uses SDK
+    
+    # Communication
+    "slack": "https://slack.com/api",
+    "discord": "https://discord.com/api/v10",
+    "telegram": "https://api.telegram.org",
+    
+    # Monitoring & Analytics
+    "langsmith": "https://api.smith.langchain.com",
 }
 
 # Secrets storage
@@ -41,22 +67,33 @@ def load_secrets() -> dict:
     """Load secrets from environment variables or secrets.json file."""
     secrets = {}
     
-    # Try environment variables first (for Docker/container setups)
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    github_pat = os.getenv("GITHUB_PAT")
-    brave_key = os.getenv("BRAVE_API_KEY")
+    # Environment variable mappings
+    env_mappings = {
+        "openrouter": ("OPENROUTER_API_KEY", "api_key"),
+        "openai": ("OPENAI_API_KEY", "api_key"),
+        "anthropic": ("ANTHROPIC_API_KEY", "api_key"),
+        "gemini": ("GEMINI_API_KEY", "api_key"),
+        "groq": ("GROQ_API_KEY", "api_key"),
+        "cohere": ("COHERE_API_KEY", "api_key"),
+        "mistral": ("MISTRAL_API_KEY", "api_key"),
+        "deepseek": ("DEEPSEEK_API_KEY", "api_key"),
+        "brave": ("BRAVE_API_KEY", "api_key"),
+        "serpapi": ("SERPAPI_KEY", "api_key"),
+        "tavily": ("TAVILY_API_KEY", "api_key"),
+        "github": ("GITHUB_PAT", "pat"),
+        "gitlab": ("GITLAB_TOKEN", "token"),
+        "slack": ("SLACK_TOKEN", "token"),
+        "discord": ("DISCORD_TOKEN", "token"),
+        "telegram": ("TELEGRAM_BOT_TOKEN", "token"),
+        "langsmith": ("LANGSMITH_API_KEY", "api_key"),
+    }
     
-    if openrouter_key:
-        secrets["openrouter"] = {"api_key": openrouter_key}
-        logger.info("Loaded OpenRouter key from environment")
-    
-    if github_pat:
-        secrets["github"] = {"pat": github_pat}
-        logger.info("Loaded GitHub PAT from environment")
-    
-    if brave_key:
-        secrets["brave"] = {"api_key": brave_key}
-        logger.info("Loaded Brave key from environment")
+    # Try environment variables first
+    for service, (env_var, key_name) in env_mappings.items():
+        value = os.getenv(env_var)
+        if value:
+            secrets[service] = {key_name: value}
+            logger.info(f"Loaded {service} key from environment")
     
     # Fallback to secrets.json if no env vars
     if not secrets and SECRETS_FILE.exists():
@@ -77,12 +114,25 @@ def get_auth_header(service: str) -> Optional[str]:
     if service not in _secrets:
         return None
     
-    if service == "openrouter":
+    # Bearer token services
+    bearer_services = [
+        "openrouter", "openai", "anthropic", "gemini", "groq",
+        "cohere", "mistral", "deepseek", "brave", "serpapi",
+        "tavily", "gitlab", "langsmith"
+    ]
+    
+    # Token-based services (different formats)
+    if service in bearer_services:
         return f"Bearer {_secrets[service]['api_key']}"
     elif service == "github":
         return f"token {_secrets[service]['pat']}"
-    elif service == "brave":
-        return f"Bearer {_secrets[service]['api_key']}"
+    elif service == "slack":
+        return f"Bearer {_secrets[service]['token']}"
+    elif service == "discord":
+        return f"Bot {_secrets[service]['token']}"
+    elif service == "telegram":
+        # Telegram uses bot token in URL, not header
+        return None
     
     return None
 
@@ -122,6 +172,14 @@ async def proxy_request(
     # Build target URL
     target_base = TARGETS[service]
     target_url = f"{target_base}/{path}"
+    
+    # Handle service-specific URL modifications
+    if service == "gemini" and "api_key" in _secrets.get(service, {}):
+        query_params = {**query_params, "key": _secrets[service]["api_key"]}
+    elif service == "telegram" and "token" in _secrets.get(service, {}):
+        # Telegram uses /bot{token}/path format
+        target_url = f"{target_base}/bot{_secrets[service]['token']}/{path}"
+    
     if query_params:
         query_string = "&".join(f"{k}={v}" for k, v in query_params.items())
         target_url = f"{target_url}?{query_string}"
@@ -147,6 +205,21 @@ async def proxy_request(
     elif service == "openrouter":
         forward_headers["HTTP-Referer"] = headers.get("referer", "https://agent-vault.local")
         forward_headers["X-Title"] = "Agent Vault Proxy"
+    elif service == "anthropic":
+        forward_headers["anthropic-version"] = "2023-06-01"
+    elif service == "gemini":
+        # Gemini uses API key in query param, handled separately
+        pass
+    elif service == "cohere":
+        forward_headers["Accept"] = "application/json"
+    elif service == "gitlab":
+        forward_headers["Accept"] = "application/json"
+    elif service == "slack":
+        forward_headers["Accept"] = "application/json"
+    elif service == "discord":
+        forward_headers["Accept"] = "application/json"
+    elif service == "langsmith":
+        forward_headers["Accept"] = "application/json"
     
     logger.info(f"Proxying {method} {target_url}")
     
@@ -214,14 +287,35 @@ async def root():
     """Root endpoint with usage info."""
     return {
         "name": "Agent Vault Proxy",
-        "version": "1.0.0",
-        "endpoints": {
-            "/health": "Health check",
-            "/openrouter/*": "Proxy to openrouter.ai/api/v1/*",
-            "/github/*": "Proxy to api.github.com/*",
-            "/brave/*": "Proxy to api.search.brave.com/*",
+        "version": "1.1.0",
+        "description": "Secure API Key Injection Proxy for 15+ AI Services",
+        "services": {
+            # LLM APIs
+            "openrouter": "OpenRouter (unified LLM access)",
+            "openai": "OpenAI (GPT-4, etc.)",
+            "anthropic": "Anthropic (Claude)",
+            "gemini": "Google Gemini",
+            "groq": "Groq (fast inference)",
+            "cohere": "Cohere",
+            "mistral": "Mistral AI",
+            "deepseek": "DeepSeek",
+            # Search
+            "brave": "Brave Search",
+            "serpapi": "SerpAPI (Google Search)",
+            "tavily": "Tavily (AI search)",
+            # Git
+            "github": "GitHub API",
+            "gitlab": "GitLab API",
+            # Communication
+            "slack": "Slack API",
+            "discord": "Discord API",
+            "telegram": "Telegram Bot API",
+            # Monitoring
+            "langsmith": "LangSmith (LLM tracing)",
         },
-        "usage": "Send requests to /{service}/{path} with your payload"
+        "usage": "POST/GET /{service}/{api-path} - Auth headers injected automatically",
+        "health": "/health - Check configured services",
+        "docs": "/docs - OpenAPI documentation"
     }
 
 
