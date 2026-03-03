@@ -438,7 +438,7 @@ async def root():
     """Root endpoint with usage info."""
     return {
         "name": "Agent Vault Proxy",
-        "version": "1.2.0",
+        "version": "0.9.0-beta",
         "description": "Secure API Key Injection Proxy for 30+ AI Services",
         "services": {
             # LLM APIs

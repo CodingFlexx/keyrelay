@@ -1,6 +1,9 @@
-# Agent Vault Proxy
+# Agent Vault Proxy (Beta)
 
 Secure API Key Injection Proxy for AI Agents and Applications.
+
+> **Version:** 0.9.0-beta (pre-1.0.0)  
+> **Status:** Feature-complete, testing phase before 1.0.0 release
 
 ## Purpose
 
