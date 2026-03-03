@@ -7,6 +7,7 @@ Keys are stored locally in secrets.json and never exposed to clients.
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -22,8 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-SECRETS_FILE = Path("secrets.json")
+# Configuration - can be overridden via env var
+SECRETS_FILE = Path(os.getenv("SECRETS_FILE", "secrets.json"))
 
 # Target URLs
 TARGETS = {
@@ -37,15 +38,38 @@ _secrets: dict = {}
 
 
 def load_secrets() -> dict:
-    """Load secrets from local secrets.json file."""
-    if not SECRETS_FILE.exists():
-        logger.error(f"Secrets file not found: {SECRETS_FILE.absolute()}")
+    """Load secrets from environment variables or secrets.json file."""
+    secrets = {}
+    
+    # Try environment variables first (for Docker/container setups)
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    github_pat = os.getenv("GITHUB_PAT")
+    brave_key = os.getenv("BRAVE_API_KEY")
+    
+    if openrouter_key:
+        secrets["openrouter"] = {"api_key": openrouter_key}
+        logger.info("Loaded OpenRouter key from environment")
+    
+    if github_pat:
+        secrets["github"] = {"pat": github_pat}
+        logger.info("Loaded GitHub PAT from environment")
+    
+    if brave_key:
+        secrets["brave"] = {"api_key": brave_key}
+        logger.info("Loaded Brave key from environment")
+    
+    # Fallback to secrets.json if no env vars
+    if not secrets and SECRETS_FILE.exists():
+        logger.info(f"Loading secrets from {SECRETS_FILE}")
+        with open(SECRETS_FILE) as f:
+            secrets = json.load(f)
+    elif not secrets:
+        logger.error(f"No secrets found. Set env vars or create {SECRETS_FILE}")
         raise FileNotFoundError(
-            f"Create {SECRETS_FILE} from secrets.json.example and add your keys"
+            f"Create {SECRETS_FILE} from secrets.json.example or set environment variables"
         )
     
-    with open(SECRETS_FILE) as f:
-        return json.load(f)
+    return secrets
 
 
 def get_auth_header(service: str) -> Optional[str]:
