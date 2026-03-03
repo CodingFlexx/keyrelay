@@ -339,6 +339,43 @@ services:
     restart: unless-stopped
 ```
 
+### Integration with OpenClaw/Nanobot
+
+```yaml
+version: '3.8'
+
+services:
+  # The secure proxy
+  agent-vault-proxy:
+    image: agent-vault-proxy:latest
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+    networks:
+      - agent-network
+
+  # AI Agent - no real keys needed!
+  openclaw:
+    image: openclaw:latest
+    environment:
+      # Dummy keys - proxy handles the real ones
+      - OPENROUTER_API_KEY=dummy-key
+      - ANTHROPIC_API_KEY=dummy-key
+      # Point to proxy instead of real APIs
+      - OPENROUTER_BASE_URL=http://agent-vault-proxy:8080/openrouter
+      - ANTHROPIC_BASE_URL=http://agent-vault-proxy:8080/anthropic
+      - PINECONE_BASE_URL=http://agent-vault-proxy:8080/pinecone
+    networks:
+      - agent-network
+    depends_on:
+      - agent-vault-proxy
+
+networks:
+  agent-network:
+    driver: bridge
+```
+
 ## Health Check
 
 ```bash
@@ -363,16 +400,112 @@ Response:
 - **No keys in logs** - only service names are logged
 - **Agents never see real keys** - only dummy keys for proxy routing
 
+### Security Model
+
+The proxy implements a **Key Isolation Pattern**:
+
+1. **Agents** use dummy keys (e.g., `dummy-openrouter-key`)
+2. **Proxy** validates the service endpoint, injects real key
+3. **Real keys** never leave the secure proxy container
+4. **Network isolation** - agents only talk to proxy, not external APIs
+
+This means:
+- ✅ Agent code can be open-source without exposing keys
+- ✅ Agent containers don't need secret management
+- ✅ Keys can be rotated without agent redeployment
+- ✅ Compromised agents can't leak real API keys
+
+## Zero-Friction Integration
+
+The proxy is designed as a **transparent drop-in replacement**. AI agents keep their complete configuration (models, parameters, temperature, etc.) - only the API endpoint and a dummy key need to change.
+
+### Before (Direct API Access)
+```python
+# Agent configuration
+OPENROUTER_API_KEY = "sk-or-v1-abc123..."  # ❌ Real key exposed
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Model configuration stays the same
+MODEL = "google/gemini-2.5-flash-preview"
+TEMPERATURE = 0.7
+MAX_TOKENS = 4096
+```
+
+### After (Via Proxy)
+```python
+# Agent configuration - ONLY these change
+OPENROUTER_API_KEY = "dummy-openrouter-key"  # ✅ Dummy/fictitious key
+OPENROUTER_BASE_URL = "http://proxy:8080/openrouter"  # ✅ Proxy endpoint
+
+# Model configuration stays EXACTLY the same
+MODEL = "google/gemini-2.5-flash-preview"
+TEMPERATURE = 0.7
+MAX_TOKENS = 4096
+# ... all other parameters unchanged
+```
+
+### OpenClaw/Nanobot Example
+```yaml
+# config.yaml - ONLY change base_url and use dummy key
+llm:
+  provider: openrouter
+  base_url: http://agent-vault-proxy:8080/openrouter  # ← Proxy endpoint
+  api_key: dummy-openrouter-key  # ← Any non-empty string works
+  model: google/gemini-2.5-flash-preview
+  temperature: 0.7
+  max_tokens: 4096
+  # All other settings unchanged
+```
+
+### Generic Integration Pattern
+```python
+import os
+
+# Configuration (only these 2 lines change per environment)
+API_KEY = os.getenv("API_KEY", "dummy-key")  # Dummy key for proxy
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8080/openrouter")
+
+# Everything else stays the same
+MODEL = "claude-3-opus-20240229"
+TEMPERATURE = 0.7
+# ... rest of config
+
+# Client initialization (OpenAI-compatible)
+from openai import OpenAI
+client = OpenAI(
+    api_key=API_KEY,      # Dummy key - proxy replaces it
+    base_url=BASE_URL,    # Proxy endpoint
+)
+
+# Usage is IDENTICAL to direct API access
+response = client.chat.completions.create(
+    model=MODEL,
+    temperature=TEMPERATURE,
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+### Key Points
+- ✅ **Zero config changes** for models, parameters, or request format
+- ✅ **Same API** - OpenAI-compatible clients work unchanged
+- ✅ **Dummy key** can be any string (e.g., `dummy`, `proxy`, `vault`)
+- ✅ **Proxy injects** the real key from secure storage
+- ✅ **Response flows** directly back to agent
+
 ## Architecture
 
 ```
 ┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
 │  AI Agent   │ ─────────────────→ │  Agent Vault    │ ─────────────────→ │   OpenAI    │
 │  (OpenClaw) │                    │  Proxy          │                    │   API       │
+│             │  Model, Params   │                 │                    │             │
+│             │  (unchanged)     │                 │                    │             │
 └─────────────┘                    └─────────────────┘                    └─────────────┘
        ↑                                    │                                    │
+       │                                    │                                    │
        └────────────────────────────────────┴────────────────────────────────────┘
-                                         Response
+                                    Response
+                                    (unchanged)
 ```
 
 ## Adding New Services
