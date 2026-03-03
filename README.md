@@ -10,13 +10,44 @@ This FastAPI application acts as a secure proxy that:
 - Provides a unified interface for multiple AI services
 - Keeps your keys out of application code and repositories
 
-## Supported Services
+## Supported Services (15+)
 
-| Endpoint | Target | Auth Type |
-|----------|--------|-----------|
-| `/openrouter/*` | openrouter.ai/api/v1/* | Bearer Token |
-| `/github/*` | api.github.com/* | PAT (token) |
-| `/brave/*` | api.search.brave.com/* | Bearer Token |
+### LLM APIs
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/openrouter/*` | OpenRouter (unified) | Bearer |
+| `/openai/*` | OpenAI (GPT-4, etc.) | Bearer |
+| `/anthropic/*` | Anthropic (Claude) | Bearer + Version Header |
+| `/gemini/*` | Google Gemini | API Key (Query Param) |
+| `/groq/*` | Groq (fast inference) | Bearer |
+| `/cohere/*` | Cohere | Bearer |
+| `/mistral/*` | Mistral AI | Bearer |
+| `/deepseek/*` | DeepSeek | Bearer |
+
+### Search APIs
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/brave/*` | Brave Search | Bearer |
+| `/serpapi/*` | SerpAPI (Google Search) | Bearer |
+| `/tavily/*` | Tavily (AI search) | Bearer |
+
+### Git & Dev
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/github/*` | GitHub API | Token |
+| `/gitlab/*` | GitLab API | Bearer |
+
+### Communication
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/slack/*` | Slack API | Bearer |
+| `/discord/*` | Discord API | Bot Token |
+| `/telegram/*` | Telegram Bot API | Token (URL) |
+
+### Monitoring
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/langsmith/*` | LangSmith (LLM tracing) | Bearer |
 
 ## Quick Start
 
@@ -66,9 +97,35 @@ python main.py
 ### Option 1: Environment Variables (Docker-friendly)
 
 Set these before running:
-- `OPENROUTER_API_KEY` - Your OpenRouter API key
-- `GITHUB_PAT` - Your GitHub Personal Access Token
-- `BRAVE_API_KEY` - Your Brave Search API key
+
+**LLM APIs:**
+- `OPENROUTER_API_KEY` - OpenRouter API key
+- `OPENAI_API_KEY` - OpenAI API key
+- `ANTHROPIC_API_KEY` - Anthropic API key
+- `GEMINI_API_KEY` - Google Gemini API key
+- `GROQ_API_KEY` - Groq API key
+- `COHERE_API_KEY` - Cohere API key
+- `MISTRAL_API_KEY` - Mistral API key
+- `DEEPSEEK_API_KEY` - DeepSeek API key
+
+**Search APIs:**
+- `BRAVE_API_KEY` - Brave Search API key
+- `SERPAPI_KEY` - SerpAPI key
+- `TAVILY_API_KEY` - Tavily API key
+
+**Git APIs:**
+- `GITHUB_PAT` - GitHub Personal Access Token
+- `GITLAB_TOKEN` - GitLab Token
+
+**Communication:**
+- `SLACK_TOKEN` - Slack Bot Token
+- `DISCORD_TOKEN` - Discord Bot Token
+- `TELEGRAM_BOT_TOKEN` - Telegram Bot Token
+
+**Monitoring:**
+- `LANGSMITH_API_KEY` - LangSmith API key
+
+**General:**
 - `SECRETS_FILE` - Path to secrets.json (default: `./secrets.json`)
 
 ### Option 2: secrets.json File
@@ -89,24 +146,74 @@ Create a `secrets.json` file:
 }
 ```
 
-## Usage
+## Usage Examples
 
-Send requests to the proxy instead of directly to APIs:
+### LLM APIs
 
 ```bash
-# OpenRouter - Chat Completions
+# OpenRouter
 curl http://localhost:8080/openrouter/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "google/gemini-2.5-flash-preview",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  -d '{"model": "google/gemini-2.5-flash-preview", "messages": [{"role": "user", "content": "Hello"}]}'
 
-# GitHub API - List your repos
+# OpenAI
+curl http://localhost:8080/openai/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Anthropic (Claude)
+curl http://localhost:8080/anthropic/messages \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-3-opus-20240229", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Google Gemini
+curl "http://localhost:8080/gemini/models/gemini-pro:generateContent" \
+  -H "Content-Type: application/json" \
+  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'
+
+# Groq
+curl http://localhost:8080/groq/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3-8b-8192", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+### Search APIs
+
+```bash
+# Brave Search
+curl "http://localhost:8080/brave/res/v1/web/search?q=fastapi+tutorial"
+
+# Tavily
+curl http://localhost:8080/tavily/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "latest AI news", "max_results": 5}'
+```
+
+### Git & Dev
+
+```bash
+# GitHub - List repos
 curl http://localhost:8080/github/user/repos
 
-# Brave Search - Web search
-curl "http://localhost:8080/brave/res/v1/web/search?q=fastapi+tutorial"
+# GitLab - List projects
+curl http://localhost:8080/gitlab/projects
+```
+
+### Communication
+
+```bash
+# Slack - Post message
+curl http://localhost:8080/slack/chat.postMessage \
+  -H "Content-Type: application/json" \
+  -d '{"channel": "#general", "text": "Hello from Agent Vault!"}'
+
+# Telegram - Send message
+curl "http://localhost:8080/telegram/sendMessage?chat_id=123456&text=Hello"
+
+# Discord - Send message
+curl http://localhost:8080/discord/channels/123456/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Hello from Agent Vault!"}'
 ```
 
 ## Docker Deployment
