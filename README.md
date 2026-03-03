@@ -7,10 +7,17 @@ Secure API Key Injection Proxy for AI Agents and Applications.
 This FastAPI application acts as a secure proxy that:
 - Stores API keys securely (environment variables or mounted secrets file)
 - Injects authentication headers into forwarded requests
-- Provides a unified interface for multiple AI services
+- Provides a unified interface for 30+ AI services
 - Keeps your keys out of application code and repositories
 
-## Supported Services (15+)
+**How it works:**
+1. AI Agents use a dummy/fictitious API key
+2. Request goes to the proxy
+3. Proxy injects the real API key
+4. Response returns directly to the agent
+5. **Keys are never exposed to agents!**
+
+## Supported Services (30+)
 
 ### LLM APIs
 | Endpoint | Service | Auth |
@@ -23,6 +30,17 @@ This FastAPI application acts as a secure proxy that:
 | `/cohere/*` | Cohere | Bearer |
 | `/mistral/*` | Mistral AI | Bearer |
 | `/deepseek/*` | DeepSeek | Bearer |
+| `/azure_openai/*` | Azure OpenAI | Bearer |
+| `/aws_bedrock/*` | AWS Bedrock | AWS SigV4 |
+
+### Vector Databases
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/pinecone/*` | Pinecone | Bearer |
+| `/weaviate/*` | Weaviate | Bearer |
+| `/qdrant/*` | Qdrant | Bearer |
+| `/chroma/*` | Chroma | Bearer |
+| `/milvus/*` | Milvus | Bearer |
 
 ### Search APIs
 | Endpoint | Service | Auth |
@@ -30,12 +48,21 @@ This FastAPI application acts as a secure proxy that:
 | `/brave/*` | Brave Search | Bearer |
 | `/serpapi/*` | SerpAPI (Google Search) | Bearer |
 | `/tavily/*` | Tavily (AI search) | Bearer |
+| `/exa/*` | Exa AI Search | Bearer |
+| `/perplexity/*` | Perplexity API | Bearer |
 
 ### Git & Dev
 | Endpoint | Service | Auth |
 |----------|---------|------|
 | `/github/*` | GitHub API | Token |
 | `/gitlab/*` | GitLab API | Bearer |
+| `/bitbucket/*` | Bitbucket API | Bearer |
+
+### Cloud & Storage
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/supabase/*` | Supabase | Bearer |
+| `/firebase/*` | Firebase | Token |
 
 ### Communication
 | Endpoint | Service | Auth |
@@ -43,11 +70,30 @@ This FastAPI application acts as a secure proxy that:
 | `/slack/*` | Slack API | Bearer |
 | `/discord/*` | Discord API | Bot Token |
 | `/telegram/*` | Telegram Bot API | Token (URL) |
+| `/twilio/*` | Twilio | Basic Auth |
+| `/sendgrid/*` | SendGrid | Bearer |
 
-### Monitoring
+### Monitoring & Analytics
 | Endpoint | Service | Auth |
 |----------|---------|------|
 | `/langsmith/*` | LangSmith (LLM tracing) | Bearer |
+| `/langfuse/*` | Langfuse | Bearer |
+| `/weights_biases/*` | Weights & Biases | Bearer |
+| `/arize/*` | Arize AI | Bearer |
+
+### Image & Media
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/replicate/*` | Replicate | Token |
+| `/stability/*` | Stability AI | Bearer |
+| `/cloudinary/*` | Cloudinary | API Key |
+
+### Other AI Services
+| Endpoint | Service | Auth |
+|----------|---------|------|
+| `/huggingface/*` | Hugging Face | Bearer |
+| `/assemblyai/*` | AssemblyAI | Bearer |
+| `/elevenlabs/*` | ElevenLabs | Bearer |
 
 ## Quick Start
 
@@ -96,55 +142,46 @@ python main.py
 
 ### Option 1: Environment Variables (Docker-friendly)
 
-Set these before running:
-
 **LLM APIs:**
-- `OPENROUTER_API_KEY` - OpenRouter API key
-- `OPENAI_API_KEY` - OpenAI API key
-- `ANTHROPIC_API_KEY` - Anthropic API key
-- `GEMINI_API_KEY` - Google Gemini API key
-- `GROQ_API_KEY` - Groq API key
-- `COHERE_API_KEY` - Cohere API key
-- `MISTRAL_API_KEY` - Mistral API key
-- `DEEPSEEK_API_KEY` - DeepSeek API key
+- `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY`, `GROQ_API_KEY`, `COHERE_API_KEY`
+- `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`
+- `AZURE_OPENAI_API_KEY`, `AWS_BEDROCK_KEY`
+
+**Vector Databases:**
+- `PINECONE_API_KEY`, `WEAVIATE_API_KEY`, `QDRANT_API_KEY`
+- `CHROMA_API_KEY`, `MILVUS_API_KEY`
 
 **Search APIs:**
-- `BRAVE_API_KEY` - Brave Search API key
-- `SERPAPI_KEY` - SerpAPI key
-- `TAVILY_API_KEY` - Tavily API key
+- `BRAVE_API_KEY`, `SERPAPI_KEY`, `TAVILY_API_KEY`
+- `EXA_API_KEY`, `PERPLEXITY_API_KEY`
 
 **Git APIs:**
-- `GITHUB_PAT` - GitHub Personal Access Token
-- `GITLAB_TOKEN` - GitLab Token
+- `GITHUB_PAT`, `GITLAB_TOKEN`, `BITBUCKET_TOKEN`
+
+**Cloud:**
+- `SUPABASE_KEY`, `FIREBASE_TOKEN`
 
 **Communication:**
-- `SLACK_TOKEN` - Slack Bot Token
-- `DISCORD_TOKEN` - Discord Bot Token
-- `TELEGRAM_BOT_TOKEN` - Telegram Bot Token
+- `SLACK_TOKEN`, `DISCORD_TOKEN`, `TELEGRAM_BOT_TOKEN`
+- `TWILIO_AUTH_TOKEN`, `SENDGRID_API_KEY`
 
 **Monitoring:**
-- `LANGSMITH_API_KEY` - LangSmith API key
+- `LANGSMITH_API_KEY`, `LANGFUSE_PUBLIC_KEY`
+- `WANDB_API_KEY`, `ARIZE_API_KEY`
+
+**Image & Media:**
+- `REPLICATE_API_TOKEN`, `STABILITY_API_KEY`, `CLOUDINARY_API_KEY`
+
+**Other AI:**
+- `HF_API_TOKEN`, `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`
 
 **General:**
 - `SECRETS_FILE` - Path to secrets.json (default: `./secrets.json`)
 
 ### Option 2: secrets.json File
 
-Create a `secrets.json` file:
-
-```json
-{
-  "openrouter": {
-    "api_key": "sk-or-v1-..."
-  },
-  "github": {
-    "pat": "ghp_..."
-  },
-  "brave": {
-    "api_key": "BSA..."
-  }
-}
-```
+Create a `secrets.json` file (see `secrets.json.example` for all services).
 
 ## Usage Examples
 
@@ -177,6 +214,23 @@ curl http://localhost:8080/groq/chat/completions \
   -d '{"model": "llama3-8b-8192", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
+### Vector Databases
+
+```bash
+# Pinecone - List indexes
+curl http://localhost:8080/pinecone/indexes
+
+# Weaviate - Query
+curl http://localhost:8080/weaviate/v1/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ Get { Article { title } } }"}'
+
+# Qdrant - Search
+curl http://localhost:8080/qdrant/collections/my_collection/points/search \
+  -H "Content-Type: application/json" \
+  -d '{"vector": [0.1, 0.2, 0.3], "limit": 10}'
+```
+
 ### Search APIs
 
 ```bash
@@ -187,6 +241,11 @@ curl "http://localhost:8080/brave/res/v1/web/search?q=fastapi+tutorial"
 curl http://localhost:8080/tavily/search \
   -H "Content-Type: application/json" \
   -d '{"query": "latest AI news", "max_results": 5}'
+
+# Perplexity
+curl http://localhost:8080/perplexity/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "sonar", "messages": [{"role": "user", "content": "What is AI?"}]}'
 ```
 
 ### Git & Dev
@@ -197,6 +256,9 @@ curl http://localhost:8080/github/user/repos
 
 # GitLab - List projects
 curl http://localhost:8080/gitlab/projects
+
+# Bitbucket - List repos
+curl http://localhost:8080/bitbucket/repositories/{workspace}
 ```
 
 ### Communication
@@ -214,6 +276,30 @@ curl "http://localhost:8080/telegram/sendMessage?chat_id=123456&text=Hello"
 curl http://localhost:8080/discord/channels/123456/messages \
   -H "Content-Type: application/json" \
   -d '{"content": "Hello from Agent Vault!"}'
+
+# Twilio - Send SMS
+curl http://localhost:8080/twilio/Accounts/{account_sid}/Messages.json \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d 'To=+1234567890&From=+0987654321&Body=Hello'
+```
+
+### Image & Media
+
+```bash
+# Replicate - Run model
+curl http://localhost:8080/replicate/models/stability-ai/stable-diffusion/predictions \
+  -H "Content-Type: application/json" \
+  -d '{"input": {"prompt": "a photo of an astronaut riding a horse"}}'
+
+# Stability AI - Generate image
+curl http://localhost:8080/stability/generation/stable-diffusion-v1-6/text-to-image \
+  -H "Content-Type: application/json" \
+  -d '{"text_prompts": [{"text": "a photo of an astronaut"}]}'
+
+# ElevenLabs - Text to speech
+curl http://localhost:8080/elevenlabs/text-to-speech/21m00Tcm4TlvDq8ikWAM \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from Agent Vault!"}'
 ```
 
 ## Docker Deployment
@@ -249,6 +335,7 @@ services:
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GITHUB_PAT=${GITHUB_PAT}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
     restart: unless-stopped
 ```
 
@@ -262,7 +349,7 @@ Response:
 ```json
 {
   "status": "healthy",
-  "services": ["openrouter", "github", "brave"],
+  "services": ["openrouter", "github", "brave", "pinecone"],
   "configured": ["openrouter", "github"]
 }
 ```
@@ -274,6 +361,19 @@ Response:
 - **Mount secrets as read-only** in Docker (`:ro` flag)
 - **Non-root user** in Docker container
 - **No keys in logs** - only service names are logged
+- **Agents never see real keys** - only dummy keys for proxy routing
+
+## Architecture
+
+```
+┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
+│  AI Agent   │ ─────────────────→ │  Agent Vault    │ ─────────────────→ │   OpenAI    │
+│  (OpenClaw) │                    │  Proxy          │                    │   API       │
+└─────────────┘                    └─────────────────┘                    └─────────────┘
+       ↑                                    │                                    │
+       └────────────────────────────────────┴────────────────────────────────────┘
+                                         Response
+```
 
 ## Adding New Services
 
@@ -283,19 +383,22 @@ Edit `main.py`:
    ```python
    TARGETS = {
        "openrouter": "https://openrouter.ai/api/v1",
-       "github": "https://api.github.com",
-       "brave": "https://api.search.brave.com",
        "mynewservice": "https://api.myservice.com",
    }
    ```
 
-2. Add auth logic in `get_auth_header()`:
+2. Add env mapping in `load_secrets()`:
+   ```python
+   "mynewservice": ("MYNEW_API_KEY", "api_key"),
+   ```
+
+3. Add auth logic in `get_auth_header()`:
    ```python
    elif service == "mynewservice":
        return f"Bearer {_secrets[service]['api_key']}"
    ```
 
-3. Add service-specific headers in `proxy_request()` if needed.
+4. Add service-specific headers if needed.
 
 ## License
 
