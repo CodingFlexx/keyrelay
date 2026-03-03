@@ -2,22 +2,12 @@
 """
 Agent Vault CLI - Manage API keys and configuration
 
-Usage:
-    ./cli.py init                    # Initialize vault
-    ./cli.py add <service> <key>     # Add API key
-    ./cli.py list                    # List configured services
-    ./cli.py remove <service>        # Remove a service
-    ./cli.py rotate                  # Rotate master key
-    ./cli.py audit                   # Show audit log
-    ./cli.py export                  # Export to env file
-    ./cli.py import <file>           # Import from env file
+A polished, interactive CLI for managing your Agent Vault.
 """
 
-import argparse
 import base64
 import getpass
 import hashlib
-import json
 import os
 import sqlite3
 import sys
@@ -25,56 +15,85 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import typer
 from cryptography.fernet import Fernet
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+from rich.text import Text
+
+app = typer.Typer(
+    name="agent-vault",
+    help="🔐 Secure API Key Management for AI Agents",
+    rich_markup_mode="rich"
+)
+console = Console()
 
 APP_DIR = Path.home() / ".agent-vault"
 DB_PATH = APP_DIR / "vault.db"
 KEY_FILE = APP_DIR / ".master_key"
 AUDIT_LOG = APP_DIR / "audit.log"
 
-# Service name mappings
-SERVICE_NAMES = {
-    "openrouter": "OpenRouter",
-    "openai": "OpenAI",
-    "anthropic": "Anthropic",
-    "gemini": "Google Gemini",
-    "groq": "Groq",
-    "cohere": "Cohere",
-    "mistral": "Mistral AI",
-    "deepseek": "DeepSeek",
-    "azure_openai": "Azure OpenAI",
-    "aws_bedrock": "AWS Bedrock",
-    "pinecone": "Pinecone",
-    "weaviate": "Weaviate",
-    "qdrant": "Qdrant",
-    "chroma": "Chroma",
-    "milvus": "Milvus",
-    "brave": "Brave Search",
-    "serpapi": "SerpAPI",
-    "tavily": "Tavily",
-    "exa": "Exa",
-    "perplexity": "Perplexity",
-    "github": "GitHub",
-    "gitlab": "GitLab",
-    "bitbucket": "Bitbucket",
-    "supabase": "Supabase",
-    "firebase": "Firebase",
-    "slack": "Slack",
-    "discord": "Discord",
-    "telegram": "Telegram",
-    "twilio": "Twilio",
-    "sendgrid": "SendGrid",
-    "langsmith": "LangSmith",
-    "langfuse": "Langfuse",
-    "weights_biases": "Weights & Biases",
-    "arize": "Arize",
-    "replicate": "Replicate",
-    "stability": "Stability AI",
-    "cloudinary": "Cloudinary",
-    "huggingface": "Hugging Face",
-    "assemblyai": "AssemblyAI",
-    "elevenlabs": "ElevenLabs",
+# Service definitions with icons and descriptions
+SERVICES = {
+    "openrouter": ("🌐", "OpenRouter", "Universal LLM API gateway"),
+    "openai": ("🤖", "OpenAI", "GPT models and embeddings"),
+    "anthropic": ("🧠", "Anthropic", "Claude AI models"),
+    "gemini": ("💎", "Google Gemini", "Google AI models"),
+    "groq": ("⚡", "Groq", "Fast inference API"),
+    "cohere": ("📝", "Cohere", "Text embeddings and generation"),
+    "mistral": ("🌪️", "Mistral AI", "Open source LLMs"),
+    "deepseek": ("🔍", "DeepSeek", "Chinese LLM provider"),
+    "azure_openai": ("☁️", "Azure OpenAI", "Microsoft Azure AI"),
+    "aws_bedrock": ("📦", "AWS Bedrock", "Amazon AI platform"),
+    "pinecone": ("🌲", "Pinecone", "Vector database"),
+    "weaviate": ("🔮", "Weaviate", "AI-native vector DB"),
+    "qdrant": ("🎯", "Qdrant", "Vector similarity search"),
+    "chroma": ("🎨", "Chroma", "Embedding database"),
+    "milvus": ("🦅", "Milvus", "Distributed vector DB"),
+    "brave": ("🦁", "Brave Search", "Privacy-focused search"),
+    "serpapi": ("🔎", "SerpAPI", "Google search API"),
+    "tavily": ("📊", "Tavily", "AI search engine"),
+    "exa": ("🔬", "Exa", "Neural search"),
+    "perplexity": ("❓", "Perplexity", "AI answer engine"),
+    "github": ("🐙", "GitHub", "Code repository"),
+    "gitlab": ("🦊", "GitLab", "DevOps platform"),
+    "bitbucket": ("🪣", "Bitbucket", "Git repository hosting"),
+    "supabase": ("⚡", "Supabase", "Firebase alternative"),
+    "firebase": ("🔥", "Firebase", "Google app platform"),
+    "slack": ("💬", "Slack", "Team messaging"),
+    "discord": ("🎮", "Discord", "Community chat"),
+    "telegram": ("✈️", "Telegram", "Secure messaging"),
+    "twilio": ("📞", "Twilio", "Communication APIs"),
+    "sendgrid": ("📧", "SendGrid", "Email delivery"),
+    "langsmith": ("🔧", "LangSmith", "LLM observability"),
+    "langfuse": ("📈", "Langfuse", "LLM analytics"),
+    "weights_biases": ("🏋️", "Weights & Biases", "ML experiment tracking"),
+    "arize": ("📊", "Arize", "ML observability"),
+    "replicate": ("🔄", "Replicate", "ML model hosting"),
+    "stability": ("🎭", "Stability AI", "Image generation"),
+    "cloudinary": ("☁️", "Cloudinary", "Media management"),
+    "huggingface": ("🤗", "Hugging Face", "ML community"),
+    "assemblyai": ("🎤", "AssemblyAI", "Speech recognition"),
+    "elevenlabs": ("🗣️", "ElevenLabs", "Voice synthesis"),
 }
+
+
+def print_banner():
+    """Print welcome banner."""
+    banner = """
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║   🔐  [bold cyan]AGENT VAULT[/bold cyan] - Secure API Key Management      ║
+    ║                                                          ║
+    ║   Your API keys, encrypted and managed with care.        ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝
+    """
+    console.print(Panel(banner, border_style="cyan", box=box.DOUBLE))
 
 
 def log_action(action: str, service: str = "", details: str = ""):
@@ -92,111 +111,181 @@ def log_action(action: str, service: str = "", details: str = ""):
         f.write(entry)
 
 
-def init_vault():
-    """Initialize the vault with master password."""
-    print("🔐 Agent Vault Initialization")
-    print("=" * 50)
-    
-    if APP_DIR.exists():
-        print(f"⚠️  Vault directory already exists: {APP_DIR}")
-        response = input("Reinitialize? This will DELETE all existing keys! [y/N]: ")
-        if response.lower() != 'y':
-            print("Aborted.")
-            return
-    
-    # Create directory
-    APP_DIR.mkdir(mode=0o700, exist_ok=True)
-    
-    # Get master password
-    print("\nSet a master password for the vault.")
-    print("This password will be required to access your API keys.")
-    
-    while True:
-        password = getpass.getpass("Master password: ")
-        if len(password) < 8:
-            print("❌ Password must be at least 8 characters")
-            continue
-        
-        confirm = getpass.getpass("Confirm password: ")
-        if password != confirm:
-            print("❌ Passwords don't match")
-            continue
-        
-        break
-    
-    # Generate encryption key from password
-    key = hashlib.pbkdf2_hmac('sha256', password.encode(), b'agent-vault-salt', 100000)
-    fernet_key = base64.urlsafe_b64encode(key)
-    
-    # Save key file (restricted permissions)
-    with open(KEY_FILE, 'wb') as f:
-        f.write(fernet_key)
-    os.chmod(KEY_FILE, 0o600)
-    
-    # Create database
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS api_keys (
-            service TEXT PRIMARY KEY,
-            key_value TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS service_metadata (
-            service TEXT PRIMARY KEY,
-            cluster TEXT,
-            project TEXT,
-            resource TEXT,
-            cloud_name TEXT,
-            account_sid TEXT,
-            FOREIGN KEY (service) REFERENCES api_keys(service)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    os.chmod(DB_PATH, 0o600)
-    
-    # Initialize audit log
-    with open(AUDIT_LOG, "w") as f:
-        f.write(f"[{datetime.now().isoformat()}] [system] Vault initialized\n")
-    os.chmod(AUDIT_LOG, 0o600)
-    
-    print("\n✅ Vault initialized successfully!")
-    print(f"📁 Location: {APP_DIR}")
-    print(f"🔑 Key file: {KEY_FILE}")
-    print(f"🗄️  Database: {DB_PATH}")
-    print("\nNext steps:")
-    print("  ./cli.py add openrouter <your-key>")
-    print("  ./cli.py list")
-
-
 def get_cipher() -> Fernet:
     """Get cipher instance."""
     if not KEY_FILE.exists():
-        print("❌ Vault not initialized. Run: ./cli.py init")
-        sys.exit(1)
+        console.print("[bold red]❌ Vault not initialized![/bold red]")
+        console.print("\n[dim]Run:[/dim] [cyan]./cli.py init[/cyan]")
+        raise typer.Exit(1)
     
-    with open(KEY_FILE, 'rb') as f:
+    with open(KEY_FILE, "rb") as f:
         key = f.read()
     
     return Fernet(key)
 
 
-def add_key(service: str, key_value: str, **metadata):
-    """Add or update an API key."""
+@app.command()
+def init(
+    force: bool = typer.Option(False, "--force", "-f", help="Force reinitialization (deletes existing keys)")
+):
+    """🔐 Initialize the vault with a master password."""
+    print_banner()
+    
+    if APP_DIR.exists() and not force:
+        console.print(f"[yellow]⚠️  Vault already exists at:[/yellow] {APP_DIR}")
+        if not Confirm.ask("Reinitialize? This will [bold red]DELETE[/bold red] all existing keys!", default=False):
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit()
+    
+    # Create directory
+    APP_DIR.mkdir(mode=0o700, exist_ok=True)
+    
+    console.print("\n[bold]Set your master password[/bold]")
+    console.print("[dim]This password protects all your API keys.[/dim]\n")
+    
+    while True:
+        password = getpass.getpass("Master password: ")
+        if len(password) < 8:
+            console.print("[red]❌ Password must be at least 8 characters[/red]")
+            continue
+        
+        confirm = getpass.getpass("Confirm password: ")
+        if password != confirm:
+            console.print("[red]❌ Passwords don't match[/red]")
+            continue
+        
+        break
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Initializing vault...", total=None)
+        
+        # Generate encryption key
+        key = hashlib.pbkdf2_hmac('sha256', password.encode(), b'agent-vault-salt', 100000)
+        fernet_key = base64.urlsafe_b64encode(key)
+        
+        # Save key file
+        with open(KEY_FILE, 'wb') as f:
+            f.write(fernet_key)
+        os.chmod(KEY_FILE, 0o600)
+        
+        # Create database
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS api_keys (
+                service TEXT PRIMARY KEY,
+                key_value TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS service_metadata (
+                service TEXT PRIMARY KEY,
+                cluster TEXT,
+                project TEXT,
+                resource TEXT,
+                cloud_name TEXT,
+                account_sid TEXT,
+                FOREIGN KEY (service) REFERENCES api_keys(service)
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        os.chmod(DB_PATH, 0o600)
+        
+        # Initialize audit log
+        with open(AUDIT_LOG, "w") as f:
+            f.write(f"[{datetime.now().isoformat()}] [system] Vault initialized\n")
+        os.chmod(AUDIT_LOG, 0o600)
+        
+        progress.update(task, completed=True)
+    
+    console.print("\n[bold green]✅ Vault initialized successfully![/bold green]")
+    console.print(f"\n[dim]Location:[/dim] {APP_DIR}")
+    console.print(f"[dim]Database:[/dim] {DB_PATH}")
+    
+    console.print("\n[bold]Next steps:[/bold]")
+    console.print("  [cyan]./cli.py add[/cyan]       # Add your first API key")
+    console.print("  [cyan]./cli.py list[/cyan]      # View all services")
+
+
+@app.command()
+def add(
+    service: Optional[str] = typer.Argument(None, help="Service name (e.g., openrouter)"),
+    key: Optional[str] = typer.Argument(None, help="API key value")
+):
+    """➕ Add or update an API key."""
     cipher = get_cipher()
-    encrypted = cipher.encrypt(key_value.encode()).decode()
+    
+    # Interactive mode if no arguments
+    if not service:
+        console.print("\n[bold]Available services:[/bold]\n")
+        
+        # Show services in a grid
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        services_list = list(SERVICES.items())
+        
+        for i in range(0, len(services_list), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(services_list):
+                    key_name, (icon, name, desc) = services_list[i + j]
+                    row.append(f"{icon} [cyan]{key_name}[/cyan] - {name}")
+            if row:
+                table.add_row(*row)
+        
+        console.print(table)
+        console.print("\n[dim]Or type a custom service name[/dim]\n")
+        
+        service = Prompt.ask("Service", choices=list(SERVICES.keys()) + ["custom"])
+        if service == "custom":
+            service = Prompt.ask("Custom service name").lower().replace(" ", "_")
+    
+    if service not in SERVICES:
+        console.print(f"[yellow]⚠️  Using custom service:[/yellow] {service}")
+    
+    # Get API key
+    if not key:
+        display_name = SERVICES.get(service, ("🔑", service, ""))[1]
+        key = getpass.getpass(f"\nEnter API key for {display_name}: ")
+        
+        if not key:
+            console.print("[red]❌ Key cannot be empty[/red]")
+            raise typer.Exit(1)
+        
+        # Confirm
+        masked = key[:4] + "*" * (len(key) - 8) + key[-4:] if len(key) > 8 else "****"
+        if not Confirm.ask(f"Save key: [dim]{masked}[/dim]?", default=True):
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit()
+    
+    # Check for metadata
+    metadata = {}
+    if service in ["azure_openai"]:
+        metadata['resource'] = Prompt.ask("Resource name (optional)", default="").strip() or None
+    elif service in ["weaviate", "qdrant", "milvus"]:
+        metadata['cluster'] = Prompt.ask("Cluster name (optional)", default="").strip() or None
+    elif service == "supabase":
+        metadata['project'] = Prompt.ask("Project ID (optional)", default="").strip() or None
+    elif service == "cloudinary":
+        metadata['cloud_name'] = Prompt.ask("Cloud name (optional)", default="").strip() or None
+    elif service == "twilio":
+        metadata['account_sid'] = Prompt.ask("Account SID (optional)", default="").strip() or None
+    
+    # Save to database
+    encrypted = cipher.encrypt(key.encode()).decode()
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Insert or update key
     cursor.execute('''
         INSERT INTO api_keys (service, key_value, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -205,38 +294,34 @@ def add_key(service: str, key_value: str, **metadata):
             updated_at=CURRENT_TIMESTAMP
     ''', (service, encrypted))
     
-    # Update metadata if provided
     if metadata:
-        fields = []
-        values = []
-        for field, value in metadata.items():
-            if value:
-                fields.append(f"{field} = ?")
-                values.append(value)
+        fields = list(metadata.keys())
+        values = list(metadata.values())
+        placeholders = ', '.join(['?'] * (len(fields) + 1))
         
-        if fields:
-            values.append(service)
-            cursor.execute(f'''
-                INSERT INTO service_metadata (service, {', '.join(metadata.keys())})
-                VALUES ({', '.join(['?'] * (len(metadata) + 1))})
-                ON CONFLICT(service) DO UPDATE SET
-                    {', '.join([f"{k}=excluded.{k}" for k in metadata.keys()])}
-            ''', tuple([service] + list(metadata.values())))
+        cursor.execute(f'''
+            INSERT INTO service_metadata (service, {', '.join(fields)})
+            VALUES ({placeholders})
+            ON CONFLICT(service) DO UPDATE SET
+                {', '.join([f"{f}=excluded.{f}" for f in fields])}
+        ''', tuple([service] + values))
     
     conn.commit()
     conn.close()
     
     log_action("ADD", service, "key_added")
     
-    display_name = SERVICE_NAMES.get(service, service)
-    print(f"✅ Added/updated key for {display_name} ({service})")
+    icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+    console.print(f"\n[bold green]✅ Added {icon} {name}[/bold green]")
 
 
-def list_keys():
-    """List all configured services."""
+@app.command()
+def list_services():
+    """📋 List all configured services."""
     if not DB_PATH.exists():
-        print("❌ Vault not initialized. Run: ./cli.py init")
-        return
+        console.print("[yellow]📭 No vault found.[/yellow]")
+        console.print("\n[dim]Initialize with:[/dim] [cyan]./cli.py init[/cyan]")
+        raise typer.Exit()
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -253,40 +338,64 @@ def list_keys():
     conn.close()
     
     if not rows:
-        print("📭 No keys configured")
-        print("\nAdd a key with:")
-        print("  ./cli.py add <service> <key>")
+        console.print("[yellow]📭 No keys configured[/yellow]")
+        console.print("\n[dim]Add your first key:[/dim] [cyan]./cli.py add[/cyan]")
         return
     
-    print("\n📋 Configured Services:")
-    print("=" * 80)
-    print(f"{'Service':<20} {'Name':<25} {'Updated':<20} {'Extras'}")
-    print("-" * 80)
+    console.print(f"\n[bold]📋 Configured Services ({len(rows)})[/bold]\n")
+    
+    table = Table(
+        title="Your API Keys",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan"
+    )
+    
+    table.add_column("Service", style="cyan", min_width=15)
+    table.add_column("Name", min_width=20)
+    table.add_column("Last Updated", min_width=20)
+    table.add_column("Details", min_width=25)
     
     for row in rows:
         service, created, updated, cluster, project, resource, cloud_name = row
-        display_name = SERVICE_NAMES.get(service, service)[:24]
+        icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
         
-        extras = []
+        details = []
         if cluster:
-            extras.append(f"cluster={cluster}")
+            details.append(f"cluster: {cluster}")
         if project:
-            extras.append(f"project={project}")
+            details.append(f"project: {project}")
         if resource:
-            extras.append(f"resource={resource}")
+            details.append(f"resource: {resource}")
         if cloud_name:
-            extras.append(f"cloud={cloud_name}")
+            details.append(f"cloud: {cloud_name}")
         
-        extras_str = ", ".join(extras) if extras else "-"
+        details_str = "\n".join(details) if details else "—"
         
-        print(f"{service:<20} {display_name:<25} {updated:<20} {extras_str}")
+        table.add_row(
+            f"{icon} {service}",
+            name,
+            updated,
+            details_str
+        )
     
-    print("=" * 80)
-    print(f"Total: {len(rows)} service(s)")
+    console.print(table)
+    console.print()
 
 
-def remove_key(service: str):
-    """Remove a service key."""
+@app.command()
+def remove(
+    service: str = typer.Argument(..., help="Service name to remove")
+):
+    """🗑️ Remove a service key."""
+    cipher = get_cipher()
+    
+    icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+    
+    if not Confirm.ask(f"Remove {icon} [cyan]{name}[/cyan]? This cannot be undone!", default=False):
+        console.print("[dim]Aborted.[/dim]")
+        raise typer.Exit()
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -296,36 +405,86 @@ def remove_key(service: str):
     if cursor.rowcount > 0:
         conn.commit()
         log_action("REMOVE", service, "key_removed")
-        display_name = SERVICE_NAMES.get(service, service)
-        print(f"✅ Removed key for {display_name} ({service})")
+        console.print(f"[bold green]✅ Removed {icon} {name}[/bold green]")
     else:
-        print(f"❌ Service not found: {service}")
+        console.print(f"[red]❌ Service not found: {service}[/red]")
     
     conn.close()
 
 
-def show_audit():
-    """Show audit log."""
+@app.command()
+def audit(
+    lines: int = typer.Option(50, "--lines", "-n", help="Number of entries to show")
+):
+    """📜 Show audit log."""
     if not AUDIT_LOG.exists():
-        print("📭 No audit log found")
-        return
-    
-    print("\n📜 Audit Log:")
-    print("=" * 80)
+        console.print("[yellow]📭 No audit log found[/yellow]")
+        raise typer.Exit()
     
     with open(AUDIT_LOG, 'r') as f:
-        lines = f.readlines()
+        all_lines = f.readlines()
     
-    # Show last 50 entries
-    for line in lines[-50:]:
-        print(line.rstrip())
+    if not all_lines:
+        console.print("[yellow]📭 Audit log is empty[/yellow]")
+        return
     
-    print("=" * 80)
-    print(f"Showing last {min(50, len(lines))} of {len(lines)} entries")
+    console.print(f"\n[bold]📜 Audit Log[/bold] [dim](last {min(lines, len(all_lines))} of {len(all_lines)} entries)[/dim]\n")
+    
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Timestamp", style="dim", min_width=20)
+    table.add_column("User", min_width=10)
+    table.add_column("Action", style="cyan", min_width=10)
+    table.add_column("Service", min_width=15)
+    table.add_column("Details", min_width=20)
+    
+    for line in all_lines[-lines:]:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Parse log entry
+        parts = line.split('] ')
+        if len(parts) >= 2:
+            timestamp = parts[0].strip('[')
+            rest = parts[1]
+            
+            user = "system"
+            action = ""
+            service = ""
+            details = ""
+            
+            if '[' in rest:
+                user = rest.split('[')[1].split(']')[0]
+                rest = rest.split(']', 1)[1].strip()
+            
+            if 'service=' in rest:
+                action = rest.split('service=')[0].strip()
+                service_part = rest.split('service=')[1]
+                if ' ' in service_part:
+                    service = service_part.split()[0]
+                    details = ' '.join(service_part.split()[1:])
+                else:
+                    service = service_part
+            else:
+                action = rest
+            
+            icon, _, _ = SERVICES.get(service, ("", service, ""))
+            
+            table.add_row(
+                timestamp,
+                user,
+                action,
+                f"{icon} {service}" if service else "—",
+                details or "—"
+            )
+    
+    console.print(table)
+    console.print()
 
 
+@app.command()
 def export_env():
-    """Export keys to .env format."""
+    """📤 Export keys to .env format."""
     cipher = get_cipher()
     
     conn = sqlite3.connect(DB_PATH)
@@ -335,12 +494,8 @@ def export_env():
     conn.close()
     
     if not rows:
-        print("❌ No keys to export")
-        return
-    
-    print("\n# Agent Vault Export")
-    print("# Generated:", datetime.now().isoformat())
-    print()
+        console.print("[yellow]📭 No keys to export[/yellow]")
+        raise typer.Exit()
     
     env_mappings = {
         "openrouter": "OPENROUTER_API_KEY",
@@ -358,118 +513,64 @@ def export_env():
         "langsmith": "LANGSMITH_API_KEY",
     }
     
+    console.print("\n[bold]📤 Environment Variables Export[/bold]\n")
+    console.print("[dim]# Copy these to your .env file:[/dim]\n")
+    
     for service, encrypted in rows:
         try:
             decrypted = cipher.decrypt(encrypted.encode()).decode()
             env_var = env_mappings.get(service, f"{service.upper()}_API_KEY")
-            print(f"{env_var}={decrypted}")
+            console.print(f"[green]{env_var}[/green]=[dim]{decrypted[:10]}...[/dim]")
         except Exception as e:
-            print(f"# Error decrypting {service}: {e}")
+            console.print(f"[red]# Error decrypting {service}: {e}[/red]")
     
     log_action("EXPORT", details="keys_exported_to_env")
-    print("\n# End of export")
+    console.print("\n[dim]# End of export[/dim]\n")
 
 
-def interactive_add():
-    """Interactive key addition."""
-    print("\n🔑 Add API Key")
-    print("=" * 50)
+@app.command()
+def status():
+    """ℹ️ Show vault status."""
+    print_banner()
     
-    print("\nAvailable services:")
-    services = sorted(SERVICE_NAMES.items(), key=lambda x: x[1])
-    for i, (key, name) in enumerate(services, 1):
-        print(f"  {i:2}. {name:<25} ({key})")
-    
-    print("\nOr type a custom service name")
-    
-    choice = input("\nSelect service (number or name): ").strip()
-    
-    # Check if number
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(services):
-            service = services[idx][0]
-        else:
-            print("❌ Invalid selection")
-            return
-    except ValueError:
-        service = choice.lower().replace(" ", "_")
-    
-    if service not in SERVICE_NAMES:
-        print(f"⚠️  Using custom service: {service}")
-    
-    # Get key
-    key_value = getpass.getpass(f"Enter API key for {SERVICE_NAMES.get(service, service)}: ")
-    
-    if not key_value:
-        print("❌ Key cannot be empty")
+    if not APP_DIR.exists():
+        console.print("[yellow]⚠️  Vault not initialized[/yellow]")
+        console.print("\n[dim]Run:[/dim] [cyan]./cli.py init[/cyan]")
         return
     
-    # Check for metadata
-    metadata = {}
+    # Count keys
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM api_keys')
+    key_count = cursor.fetchone()[0]
+    conn.close()
     
-    if service in ["azure_openai"]:
-        metadata['resource'] = input("Resource name (optional): ").strip() or None
-    elif service in ["weaviate", "qdrant", "milvus"]:
-        metadata['cluster'] = input("Cluster name (optional): ").strip() or None
-    elif service == "supabase":
-        metadata['project'] = input("Project ID (optional): ").strip() or None
-    elif service == "cloudinary":
-        metadata['cloud_name'] = input("Cloud name (optional): ").strip() or None
-    elif service == "twilio":
-        metadata['account_sid'] = input("Account SID (optional): ").strip() or None
+    # Get file sizes
+    db_size = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    audit_size = AUDIT_LOG.stat().st_size if AUDIT_LOG.exists() else 0
     
-    add_key(service, key_value, **metadata)
+    console.print("\n[bold]Vault Status[/bold]\n")
+    
+    table = Table(box=box.ROUNDED, show_header=False)
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+    
+    table.add_row("Location", str(APP_DIR))
+    table.add_row("Keys stored", str(key_count))
+    table.add_row("Database size", f"{db_size / 1024:.1f} KB")
+    table.add_row("Audit log size", f"{audit_size / 1024:.1f} KB")
+    table.add_row("Encryption", "Fernet (AES-128-CBC + HMAC)")
+    table.add_row("Permissions", "600 (owner only)")
+    
+    console.print(table)
+    console.print()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Agent Vault CLI - Manage API keys securely",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  ./cli.py init                           # Initialize vault
-  ./cli.py add openrouter sk-or-v1-...    # Add OpenRouter key
-  ./cli.py add                            # Interactive mode
-  ./cli.py list                           # Show all services
-  ./cli.py remove openrouter              # Remove a service
-  ./cli.py audit                          # View audit log
-  ./cli.py export > .env                  # Export to env file
-        """
-    )
-    
-    parser.add_argument("command", choices=[
-        "init", "add", "list", "remove", "audit", "export", "import"
-    ], help="Command to run")
-    parser.add_argument("service", nargs="?", help="Service name")
-    parser.add_argument("key", nargs="?", help="API key value")
-    
-    args = parser.parse_args()
-    
-    if args.command == "init":
-        init_vault()
-    elif args.command == "add":
-        if args.service and args.key:
-            add_key(args.service, args.key)
-        else:
-            interactive_add()
-    elif args.command == "list":
-        list_keys()
-    elif args.command == "remove":
-        if not args.service:
-            print("❌ Service name required")
-            sys.exit(1)
-        remove_key(args.service)
-    elif args.command == "audit":
-        show_audit()
-    elif args.command == "export":
-        export_env()
-    elif args.command == "import":
-        print("❌ Import not yet implemented")
-        sys.exit(1)
-    else:
-        parser.print_help()
+@app.callback()
+def callback():
+    """🔐 Agent Vault - Secure API Key Management"""
+    pass
 
 
 if __name__ == "__main__":
-    main()
+    app()
