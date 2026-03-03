@@ -394,7 +394,19 @@ Response:
 }
 ```
 
-## Security
+## Security Features
+
+### Built-in Protections
+
+- ✅ **Input Validation** - Service names and paths are validated against injection attacks
+- ✅ **Path Traversal Protection** - Blocks `../`, null bytes, and other traversal attempts
+- ✅ **Rate Limiting** - 60 requests/minute per IP with automatic blocking
+- ✅ **Security Headers** - X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- ✅ **CORS Support** - Configurable cross-origin resource sharing
+- ✅ **Request Size Limits** - 100MB maximum request body size
+- ✅ **Retry Logic** - Automatic retries with exponential backoff for transient failures
+
+### Best Practices
 
 - **Never commit `secrets.json`** - it's in `.gitignore`
 - **Use environment variables** in production (12-factor app)

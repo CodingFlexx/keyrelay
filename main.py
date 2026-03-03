@@ -5,6 +5,7 @@ A FastAPI-based proxy server that injects API keys into forwarded requests.
 Keys are stored securely in SQLite database and never exposed to clients.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -17,7 +18,10 @@ from typing import Optional, Dict
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
+
+from middleware import SecurityMiddleware, RateLimitMiddleware, LoggingMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -322,6 +326,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add security middleware
+app.add_middleware(SecurityMiddleware)
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst_size=10)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure for production
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 
 async def proxy_request(
     service: str,
@@ -408,31 +426,64 @@ async def proxy_request(
     
     logger.info(f"Proxying {method} {target_url}")
     
-    # Make request
+    # Make request with retry logic
+    max_retries = 3
+    retry_delay = 1.0
+    
     async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            response = await client.request(
-                method=method,
-                url=target_url,
-                headers=forward_headers,
-                content=body,
-                follow_redirects=True
-            )
-            
-            logger.info(f"Response: {response.status_code}")
-            
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=dict(response.headers)
-            )
-            
-        except httpx.TimeoutException:
-            logger.error(f"Timeout proxying to {service}")
-            raise HTTPException(status_code=504, detail="Gateway timeout")
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error: {e}")
-            raise HTTPException(status_code=502, detail="Bad gateway")
+        for attempt in range(max_retries):
+            try:
+                response = await client.request(
+                    method=method,
+                    url=target_url,
+                    headers=forward_headers,
+                    content=body,
+                    follow_redirects=True
+                )
+                
+                logger.info(f"Response: {response.status_code}")
+                
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                )
+                
+            except httpx.TimeoutException:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Timeout on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                logger.error(f"Timeout proxying to {service} after {max_retries} attempts")
+                raise HTTPException(status_code=504, detail="Gateway timeout")
+                
+            except httpx.ConnectError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Connection error on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                logger.error(f"Connection error after {max_retries} attempts: {e}")
+                raise HTTPException(status_code=502, detail="Bad gateway")
+                
+            except httpx.HTTPStatusError as e:
+                # Don't retry 4xx errors
+                if e.response.status_code < 500:
+                    raise HTTPException(
+                        status_code=e.response.status_code,
+                        detail=f"Upstream error: {e.response.text}"
+                    )
+                if attempt < max_retries - 1:
+                    logger.warning(f"HTTP error {e.response.status_code} on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                raise HTTPException(
+                    status_code=e.response.status_code,
+                    detail=f"Upstream error after retries: {e.response.text}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Unexpected error proxying to {service}: {e}")
+                raise HTTPException(status_code=500, detail=f"Internal proxy error: {str(e)}")
 
 
 @app.api_route("/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -454,13 +505,45 @@ async def proxy_endpoint(request: Request, service: str, path: str):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with detailed status."""
+    import time
+    
+    # Check database connectivity
+    db_status = "healthy"
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+    
+    # Get memory usage
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024
+    except ImportError:
+        memory_mb = None
+    
     return {
         "status": "healthy",
         "version": "0.9.0-beta",
-        "services_available": len(TARGETS),
-        "services_configured": len(_secrets),
-        "configured_services": list(_secrets.keys())
+        "timestamp": time.time(),
+        "services": {
+            "available": len(TARGETS),
+            "configured": len(_secrets),
+            "configured_list": list(_secrets.keys())
+        },
+        "database": db_status,
+        "memory_mb": memory_mb,
+        "features": {
+            "rate_limiting": True,
+            "cors": True,
+            "retry_logic": True,
+            "security_headers": True
+        }
     }
 
 
