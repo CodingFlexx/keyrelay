@@ -270,6 +270,27 @@ async def proxy_request(
     
     # Build target URL
     target_base = TARGETS[service]
+    
+    # Handle dynamic URLs (cluster/resource-based)
+    if service == "azure_openai" and "resource" in _secrets.get(service, {}):
+        resource = _secrets[service]["resource"]
+        target_base = f"https://{resource}.openai.azure.com/openai"
+    elif service == "weaviate" and "cluster" in _secrets.get(service, {}):
+        cluster = _secrets[service]["cluster"]
+        target_base = f"https://{cluster}.weaviate.network"
+    elif service == "qdrant" and "cluster" in _secrets.get(service, {}):
+        cluster = _secrets[service]["cluster"]
+        target_base = f"https://{cluster}.cloud.qdrant.io"
+    elif service == "milvus" and "cluster" in _secrets.get(service, {}):
+        cluster = _secrets[service]["cluster"]
+        target_base = f"https://{cluster}.milvus.io"
+    elif service == "supabase" and "project" in _secrets.get(service, {}):
+        project = _secrets[service]["project"]
+        target_base = f"https://{project}.supabase.co"
+    elif service == "cloudinary" and "cloud_name" in _secrets.get(service, {}):
+        cloud_name = _secrets[service]["cloud_name"]
+        target_base = f"https://api.cloudinary.com/v1_1/{cloud_name}"
+    
     target_url = f"{target_base}/{path}"
     
     # Handle service-specific URL modifications
