@@ -485,12 +485,63 @@ response = client.chat.completions.create(
 )
 ```
 
+### OpenClaw/Nanobot Config Example
+```yaml
+# ~/.config/openclaw/config.yaml
+llm:
+  provider: openrouter
+  # Only these 2 lines change:
+  base_url: http://localhost:8080/openrouter
+  api_key: dummy-key
+  
+  # Everything else stays EXACTLY the same:
+  model: google/gemini-2.5-flash-preview
+  temperature: 0.7
+  max_tokens: 4096
+  top_p: 0.9
+  
+  # Extra headers still work:
+  extra_headers:
+    HTTP-Referer: https://myapp.com
+    X-Title: My Application
+
+# Vector DB configuration
+vector_store:
+  provider: pinecone
+  base_url: http://localhost:8080/pinecone
+  api_key: dummy-key
+  index: my-index
+  
+# Search configuration
+search:
+  provider: brave
+  base_url: http://localhost:8080/brave
+  api_key: dummy-key
+```
+
 ### Key Points
 - ✅ **Zero config changes** for models, parameters, or request format
 - ✅ **Same API** - OpenAI-compatible clients work unchanged
 - ✅ **Dummy key** can be any string (e.g., `dummy`, `proxy`, `vault`)
 - ✅ **Proxy injects** the real key from secure storage
 - ✅ **Response flows** directly back to agent
+
+### How Dummy Keys Work
+The proxy **does not validate** the dummy key - it only uses the URL path to determine which service to proxy to:
+
+```
+Request: POST http://proxy:8080/openrouter/chat/completions
+                └──────┬──────┘
+                       │
+                       └── Proxy sees "openrouter" → injects real OpenRouter key
+
+Request: POST http://proxy:8080/anthropic/messages
+                └───────┬───────┘
+                        │
+                        └── Proxy sees "anthropic" → injects real Anthropic key
+```
+
+The dummy key in the Authorization header is **ignored** - the proxy replaces it entirely with the real key from its secure storage.
 
 ## Architecture
 
