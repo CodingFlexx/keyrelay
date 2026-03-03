@@ -37,26 +37,55 @@ TARGETS = {
     "cohere": "https://api.cohere.com/v1",
     "mistral": "https://api.mistral.ai/v1",
     "deepseek": "https://api.deepseek.com/v1",
+    "azure_openai": "https://{resource}.openai.azure.com/openai",  # Dynamic
+    "aws_bedrock": "https://bedrock-runtime.{region}.amazonaws.com",  # Dynamic
+    
+    # Vector Databases
+    "pinecone": "https://api.pinecone.io",
+    "weaviate": "https://{cluster}.weaviate.network",  # Dynamic
+    "qdrant": "https://{cluster}.cloud.qdrant.io",  # Dynamic
+    "chroma": "http://localhost:8000",  # Usually self-hosted
+    "milvus": "https://{cluster}.milvus.io",  # Dynamic
     
     # Search & Data
     "brave": "https://api.search.brave.com",
     "serpapi": "https://serpapi.com",
     "tavily": "https://api.tavily.com",
+    "exa": "https://api.exa.ai",
+    "perplexity": "https://api.perplexity.ai",
     
     # Git & Dev
     "github": "https://api.github.com",
     "gitlab": "https://gitlab.com/api/v4",
+    "bitbucket": "https://api.bitbucket.org/2.0",
     
     # Cloud & Storage
-    "aws": "https://sts.amazonaws.com",  # Placeholder - AWS uses SDK
+    "aws": "https://sts.amazonaws.com",
+    "supabase": "https://{project}.supabase.co",
+    "firebase": "https://firebase.googleapis.com",
     
     # Communication
     "slack": "https://slack.com/api",
     "discord": "https://discord.com/api/v10",
     "telegram": "https://api.telegram.org",
+    "twilio": "https://api.twilio.com/2010-04-01",
+    "sendgrid": "https://api.sendgrid.com/v3",
     
     # Monitoring & Analytics
     "langsmith": "https://api.smith.langchain.com",
+    "langfuse": "https://cloud.langfuse.com/api/public",
+    "weights_biases": "https://api.wandb.ai",
+    "arize": "https://api.arize.com",
+    
+    # Image & Media
+    "replicate": "https://api.replicate.com/v1",
+    "stability": "https://api.stability.ai/v2beta",
+    "cloudinary": "https://api.cloudinary.com/v1_1",
+    
+    # Other AI Services
+    "huggingface": "https://api-inference.huggingface.co",
+    "assemblyai": "https://api.assemblyai.com/v2",
+    "elevenlabs": "https://api.elevenlabs.io/v1",
 }
 
 # Secrets storage
@@ -69,6 +98,7 @@ def load_secrets() -> dict:
     
     # Environment variable mappings
     env_mappings = {
+        # LLM APIs
         "openrouter": ("OPENROUTER_API_KEY", "api_key"),
         "openai": ("OPENAI_API_KEY", "api_key"),
         "anthropic": ("ANTHROPIC_API_KEY", "api_key"),
@@ -77,15 +107,54 @@ def load_secrets() -> dict:
         "cohere": ("COHERE_API_KEY", "api_key"),
         "mistral": ("MISTRAL_API_KEY", "api_key"),
         "deepseek": ("DEEPSEEK_API_KEY", "api_key"),
+        "azure_openai": ("AZURE_OPENAI_API_KEY", "api_key"),
+        "aws_bedrock": ("AWS_BEDROCK_KEY", "api_key"),
+        
+        # Vector DBs
+        "pinecone": ("PINECONE_API_KEY", "api_key"),
+        "weaviate": ("WEAVIATE_API_KEY", "api_key"),
+        "qdrant": ("QDRANT_API_KEY", "api_key"),
+        "chroma": ("CHROMA_API_KEY", "api_key"),
+        "milvus": ("MILVUS_API_KEY", "api_key"),
+        
+        # Search
         "brave": ("BRAVE_API_KEY", "api_key"),
         "serpapi": ("SERPAPI_KEY", "api_key"),
         "tavily": ("TAVILY_API_KEY", "api_key"),
+        "exa": ("EXA_API_KEY", "api_key"),
+        "perplexity": ("PERPLEXITY_API_KEY", "api_key"),
+        
+        # Git
         "github": ("GITHUB_PAT", "pat"),
         "gitlab": ("GITLAB_TOKEN", "token"),
+        "bitbucket": ("BITBUCKET_TOKEN", "token"),
+        
+        # Cloud
+        "supabase": ("SUPABASE_KEY", "api_key"),
+        "firebase": ("FIREBASE_TOKEN", "token"),
+        
+        # Communication
         "slack": ("SLACK_TOKEN", "token"),
         "discord": ("DISCORD_TOKEN", "token"),
         "telegram": ("TELEGRAM_BOT_TOKEN", "token"),
+        "twilio": ("TWILIO_AUTH_TOKEN", "token"),
+        "sendgrid": ("SENDGRID_API_KEY", "api_key"),
+        
+        # Monitoring
         "langsmith": ("LANGSMITH_API_KEY", "api_key"),
+        "langfuse": ("LANGFUSE_PUBLIC_KEY", "api_key"),
+        "weights_biases": ("WANDB_API_KEY", "api_key"),
+        "arize": ("ARIZE_API_KEY", "api_key"),
+        
+        # Image & Media
+        "replicate": ("REPLICATE_API_TOKEN", "token"),
+        "stability": ("STABILITY_API_KEY", "api_key"),
+        "cloudinary": ("CLOUDINARY_API_KEY", "api_key"),
+        
+        # Other AI
+        "huggingface": ("HF_API_TOKEN", "token"),
+        "assemblyai": ("ASSEMBLYAI_API_KEY", "api_key"),
+        "elevenlabs": ("ELEVENLABS_API_KEY", "api_key"),
     }
     
     # Try environment variables first
@@ -116,9 +185,23 @@ def get_auth_header(service: str) -> Optional[str]:
     
     # Bearer token services
     bearer_services = [
+        # LLM APIs
         "openrouter", "openai", "anthropic", "gemini", "groq",
-        "cohere", "mistral", "deepseek", "brave", "serpapi",
-        "tavily", "gitlab", "langsmith"
+        "cohere", "mistral", "deepseek", "azure_openai",
+        # Vector DBs
+        "pinecone", "weaviate", "qdrant", "chroma", "milvus",
+        # Search
+        "brave", "serpapi", "tavily", "exa", "perplexity",
+        # Git
+        "gitlab", "bitbucket",
+        # Cloud
+        "supabase", "firebase",
+        # Monitoring
+        "langsmith", "langfuse", "weights_biases", "arize",
+        # Image & Media
+        "stability", "cloudinary",
+        # Other AI
+        "assemblyai", "elevenlabs",
     ]
     
     # Token-based services (different formats)
@@ -132,6 +215,22 @@ def get_auth_header(service: str) -> Optional[str]:
         return f"Bot {_secrets[service]['token']}"
     elif service == "telegram":
         # Telegram uses bot token in URL, not header
+        return None
+    elif service == "twilio":
+        # Twilio uses Basic Auth (Account SID : Auth Token)
+        import base64
+        account_sid = _secrets[service].get('account_sid', '')
+        token = _secrets[service]['token']
+        credentials = base64.b64encode(f"{account_sid}:{token}".encode()).decode()
+        return f"Basic {credentials}"
+    elif service == "sendgrid":
+        return f"Bearer {_secrets[service]['api_key']}"
+    elif service == "replicate":
+        return f"Token {_secrets[service]['token']}"
+    elif service == "huggingface":
+        return f"Bearer {_secrets[service]['token']}"
+    elif service == "aws_bedrock":
+        # AWS uses request signing, not simple headers
         return None
     
     return None
@@ -214,11 +313,42 @@ async def proxy_request(
         forward_headers["Accept"] = "application/json"
     elif service == "gitlab":
         forward_headers["Accept"] = "application/json"
+    elif service == "bitbucket":
+        forward_headers["Accept"] = "application/json"
     elif service == "slack":
         forward_headers["Accept"] = "application/json"
     elif service == "discord":
         forward_headers["Accept"] = "application/json"
     elif service == "langsmith":
+        forward_headers["Accept"] = "application/json"
+    elif service == "langfuse":
+        forward_headers["Accept"] = "application/json"
+    elif service == "weights_biases":
+        forward_headers["Accept"] = "application/json"
+    elif service == "replicate":
+        forward_headers["Accept"] = "application/json"
+        forward_headers["Prefer"] = "wait"
+    elif service == "stability":
+        forward_headers["Accept"] = "application/json"
+    elif service == "huggingface":
+        forward_headers["Accept"] = "application/json"
+    elif service == "assemblyai":
+        forward_headers["Accept"] = "application/json"
+    elif service == "elevenlabs":
+        forward_headers["Accept"] = "application/json"
+    elif service == "pinecone":
+        forward_headers["Accept"] = "application/json"
+    elif service == "weaviate":
+        forward_headers["Accept"] = "application/json"
+    elif service == "qdrant":
+        forward_headers["Accept"] = "application/json"
+    elif service == "exa":
+        forward_headers["Accept"] = "application/json"
+    elif service == "perplexity":
+        forward_headers["Accept"] = "application/json"
+    elif service == "sendgrid":
+        forward_headers["Accept"] = "application/json"
+    elif service == "twilio":
         forward_headers["Accept"] = "application/json"
     
     logger.info(f"Proxying {method} {target_url}")
@@ -287,8 +417,8 @@ async def root():
     """Root endpoint with usage info."""
     return {
         "name": "Agent Vault Proxy",
-        "version": "1.1.0",
-        "description": "Secure API Key Injection Proxy for 15+ AI Services",
+        "version": "1.2.0",
+        "description": "Secure API Key Injection Proxy for 30+ AI Services",
         "services": {
             # LLM APIs
             "openrouter": "OpenRouter (unified LLM access)",
@@ -299,19 +429,46 @@ async def root():
             "cohere": "Cohere",
             "mistral": "Mistral AI",
             "deepseek": "DeepSeek",
+            "azure_openai": "Azure OpenAI",
+            "aws_bedrock": "AWS Bedrock",
+            # Vector Databases
+            "pinecone": "Pinecone",
+            "weaviate": "Weaviate",
+            "qdrant": "Qdrant",
+            "chroma": "Chroma",
+            "milvus": "Milvus",
             # Search
             "brave": "Brave Search",
             "serpapi": "SerpAPI (Google Search)",
             "tavily": "Tavily (AI search)",
+            "exa": "Exa AI Search",
+            "perplexity": "Perplexity API",
             # Git
             "github": "GitHub API",
             "gitlab": "GitLab API",
+            "bitbucket": "Bitbucket API",
+            # Cloud
+            "supabase": "Supabase",
+            "firebase": "Firebase",
             # Communication
             "slack": "Slack API",
             "discord": "Discord API",
             "telegram": "Telegram Bot API",
+            "twilio": "Twilio",
+            "sendgrid": "SendGrid",
             # Monitoring
             "langsmith": "LangSmith (LLM tracing)",
+            "langfuse": "Langfuse",
+            "weights_biases": "Weights & Biases",
+            "arize": "Arize AI",
+            # Image & Media
+            "replicate": "Replicate",
+            "stability": "Stability AI",
+            "cloudinary": "Cloudinary",
+            # Other AI
+            "huggingface": "Hugging Face",
+            "assemblyai": "AssemblyAI",
+            "elevenlabs": "ElevenLabs",
         },
         "usage": "POST/GET /{service}/{api-path} - Auth headers injected automatically",
         "health": "/health - Check configured services",
