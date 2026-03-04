@@ -10,8 +10,10 @@ import os
 import sys
 import json
 import getpass
+import base64
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -19,6 +21,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich import box
+from cryptography.fernet import Fernet
 
 # Import database module
 from database import (
@@ -26,117 +29,179 @@ from database import (
     remove_api_key, rotate_api_key, set_service_metadata,
     log_request, get_audit_logs, get_audit_stats,
     create_user, verify_user, verify_api_key, list_users, delete_user,
-    DB_PATH, APP_DIR
+    DB_PATH as DATABASE_DB_PATH,
+    APP_DIR as DATABASE_APP_DIR
 )
 
 console = Console()
 
+# Version constant
+VERSION = "2.0.0"
+
+# App directory configuration
+APP_DIR = Path.home() / ".agent-vault"
+DB_PATH = APP_DIR / "vault.db"
+KEY_FILE = APP_DIR / ".key"
+
 # Extended service definitions with 40+ services
 SERVICES = {
     # LLM APIs
-    "openrouter": ("🌐", "OpenRouter", "Universal LLM API gateway"),
-    "openai": ("🤖", "OpenAI", "GPT models and embeddings"),
-    "anthropic": ("🧠", "Anthropic", "Claude AI models"),
-    "gemini": ("💎", "Google Gemini", "Google AI models"),
-    "groq": ("⚡", "Groq", "Fast inference API"),
-    "cohere": ("📝", "Cohere", "Text embeddings and generation"),
-    "mistral": ("🌪️", "Mistral AI", "Open source LLMs"),
-    "deepseek": ("🔍", "DeepSeek", "Chinese LLM provider"),
-    "azure_openai": ("☁️", "Azure OpenAI", "Microsoft Azure AI"),
-    "aws_bedrock": ("📦", "AWS Bedrock", "Amazon AI platform"),
-    "ai21": ("🧩", "AI21 Labs", "Jurassic language models"),
-    "aleph_alpha": ("🔤", "Aleph Alpha", "European LLM provider"),
+    "openrouter": {"icon": "🌐", "name": "OpenRouter", "description": "Universal LLM API gateway"},
+    "openai": {"icon": "🤖", "name": "OpenAI", "description": "GPT models and embeddings"},
+    "anthropic": {"icon": "🧠", "name": "Anthropic", "description": "Claude AI models"},
+    "gemini": {"icon": "💎", "name": "Google Gemini", "description": "Google AI models"},
+    "groq": {"icon": "⚡", "name": "Groq", "description": "Fast inference API"},
+    "cohere": {"icon": "📝", "name": "Cohere", "description": "Text embeddings and generation"},
+    "mistral": {"icon": "🌪️", "name": "Mistral AI", "description": "Open source LLMs"},
+    "deepseek": {"icon": "🔍", "name": "DeepSeek", "description": "Chinese LLM provider"},
+    "azure_openai": {"icon": "☁️", "name": "Azure OpenAI", "description": "Microsoft Azure AI"},
+    "aws_bedrock": {"icon": "📦", "name": "AWS Bedrock", "description": "Amazon AI platform"},
+    "ai21": {"icon": "🧩", "name": "AI21 Labs", "description": "Jurassic language models"},
+    "aleph_alpha": {"icon": "🔤", "name": "Aleph Alpha", "description": "European LLM provider"},
     
     # Vector Databases
-    "pinecone": ("🌲", "Pinecone", "Vector database"),
-    "weaviate": ("🔮", "Weaviate", "AI-native vector DB"),
-    "qdrant": ("🎯", "Qdrant", "Vector similarity search"),
-    "chroma": ("🎨", "Chroma", "Embedding database"),
-    "milvus": ("🦅", "Milvus", "Distributed vector DB"),
-    "pgvector": ("🐘", "pgvector", "Postgres vector extension"),
-    "redis_vector": ("🔴", "Redis Vector", "Redis vector search"),
-    "faiss": ("📚", "FAISS", "Facebook AI Similarity Search"),
+    "pinecone": {"icon": "🌲", "name": "Pinecone", "description": "Vector database"},
+    "weaviate": {"icon": "🔮", "name": "Weaviate", "description": "AI-native vector DB"},
+    "qdrant": {"icon": "🎯", "name": "Qdrant", "description": "Vector similarity search"},
+    "chroma": {"icon": "🎨", "name": "Chroma", "description": "Embedding database"},
+    "milvus": {"icon": "🦅", "name": "Milvus", "description": "Distributed vector DB"},
+    "pgvector": {"icon": "🐘", "name": "pgvector", "description": "Postgres vector extension"},
+    "redis_vector": {"icon": "🔴", "name": "Redis Vector", "description": "Redis vector search"},
+    "faiss": {"icon": "📚", "name": "FAISS", "description": "Facebook AI Similarity Search"},
     
     # Search APIs
-    "brave": ("🦁", "Brave Search", "Privacy-focused search"),
-    "serpapi": ("🔎", "SerpAPI", "Google search API"),
-    "tavily": ("📊", "Tavily", "AI search engine"),
-    "exa": ("🔬", "Exa", "Neural search"),
-    "perplexity": ("❓", "Perplexity", "AI answer engine"),
-    "bing": ("🔷", "Bing Search", "Microsoft search API"),
-    "google_custom_search": ("🔍", "Google Custom Search", "Programmable search"),
+    "brave": {"icon": "🦁", "name": "Brave Search", "description": "Privacy-focused search"},
+    "serpapi": {"icon": "🔎", "name": "SerpAPI", "description": "Google search API"},
+    "tavily": {"icon": "📊", "name": "Tavily", "description": "AI search engine"},
+    "exa": {"icon": "🔬", "name": "Exa", "description": "Neural search"},
+    "perplexity": {"icon": "❓", "name": "Perplexity", "description": "AI answer engine"},
+    "bing": {"icon": "🔷", "name": "Bing Search", "description": "Microsoft search API"},
+    "google_custom_search": {"icon": "🔍", "name": "Google Custom Search", "description": "Programmable search"},
     
     # Git & Dev
-    "github": ("🐙", "GitHub", "Code repository"),
-    "gitlab": ("🦊", "GitLab", "DevOps platform"),
-    "bitbucket": ("🪣", "Bitbucket", "Git repository hosting"),
-    "azure_devops": ("🔷", "Azure DevOps", "Microsoft DevOps"),
+    "github": {"icon": "🐙", "name": "GitHub", "description": "Code repository"},
+    "gitlab": {"icon": "🦊", "name": "GitLab", "description": "DevOps platform"},
+    "bitbucket": {"icon": "🪣", "name": "Bitbucket", "description": "Git repository hosting"},
+    "azure_devops": {"icon": "🔷", "name": "Azure DevOps", "description": "Microsoft DevOps"},
     
     # Cloud & Storage
-    "aws": ("☁️", "AWS", "Amazon Web Services"),
-    "gcp": ("🔵", "Google Cloud", "Google Cloud Platform"),
-    "azure": ("🔷", "Azure", "Microsoft Azure"),
-    "supabase": ("⚡", "Supabase", "Firebase alternative"),
-    "firebase": ("🔥", "Firebase", "Google app platform"),
-    "mongodb": ("🍃", "MongoDB", "NoSQL database"),
-    "planetscale": ("🪐", "PlanetScale", "MySQL platform"),
-    "neon": ("💡", "Neon", "Serverless Postgres"),
-    "upstash": ("⚡", "Upstash", "Serverless Redis/Kafka"),
+    "aws": {"icon": "☁️", "name": "AWS", "description": "Amazon Web Services"},
+    "gcp": {"icon": "🔵", "name": "Google Cloud", "description": "Google Cloud Platform"},
+    "azure": {"icon": "🔷", "name": "Azure", "description": "Microsoft Azure"},
+    "supabase": {"icon": "⚡", "name": "Supabase", "description": "Firebase alternative"},
+    "firebase": {"icon": "🔥", "name": "Firebase", "description": "Google app platform"},
+    "mongodb": {"icon": "🍃", "name": "MongoDB", "description": "NoSQL database"},
+    "planetscale": {"icon": "🪐", "name": "PlanetScale", "description": "MySQL platform"},
+    "neon": {"icon": "💡", "name": "Neon", "description": "Serverless Postgres"},
+    "upstash": {"icon": "⚡", "name": "Upstash", "description": "Serverless Redis/Kafka"},
     
     # Communication
-    "slack": ("💬", "Slack", "Team messaging"),
-    "discord": ("🎮", "Discord", "Community chat"),
-    "telegram": ("✈️", "Telegram", "Secure messaging"),
-    "twilio": ("📞", "Twilio", "Communication APIs"),
-    "sendgrid": ("📧", "SendGrid", "Email delivery"),
-    "mailgun": ("🔫", "Mailgun", "Email service"),
-    "postmark": ("📮", "Postmark", "Transactional email"),
-    "resend": ("📤", "Resend", "Email for developers"),
+    "slack": {"icon": "💬", "name": "Slack", "description": "Team messaging"},
+    "discord": {"icon": "🎮", "name": "Discord", "description": "Community chat"},
+    "telegram": {"icon": "✈️", "name": "Telegram", "description": "Secure messaging"},
+    "twilio": {"icon": "📞", "name": "Twilio", "description": "Communication APIs"},
+    "sendgrid": {"icon": "📧", "name": "SendGrid", "description": "Email delivery"},
+    "mailgun": {"icon": "🔫", "name": "Mailgun", "description": "Email service"},
+    "postmark": {"icon": "📮", "name": "Postmark", "description": "Transactional email"},
+    "resend": {"icon": "📤", "name": "Resend", "description": "Email for developers"},
     
     # Monitoring & Analytics
-    "langsmith": ("🔧", "LangSmith", "LLM observability"),
-    "langfuse": ("📈", "Langfuse", "LLM analytics"),
-    "weights_biases": ("🏋️", "Weights & Biases", "ML experiment tracking"),
-    "arize": ("📊", "Arize", "ML observability"),
-    "phoenix": ("🔥", "Phoenix", "LLM observability"),
-    "promptlayer": ("📋", "PromptLayer", "Prompt management"),
-    "helicone": ("🚁", "Helicone", "LLM monitoring"),
+    "langsmith": {"icon": "🔧", "name": "LangSmith", "description": "LLM observability"},
+    "langfuse": {"icon": "📈", "name": "Langfuse", "description": "LLM analytics"},
+    "weights_biases": {"icon": "🏋️", "name": "Weights & Biases", "description": "ML experiment tracking"},
+    "arize": {"icon": "📊", "name": "Arize", "description": "ML observability"},
+    "phoenix": {"icon": "🔥", "name": "Phoenix", "description": "LLM observability"},
+    "promptlayer": {"icon": "📋", "name": "PromptLayer", "description": "Prompt management"},
+    "helicone": {"icon": "🚁", "name": "Helicone", "description": "LLM monitoring"},
     
     # Image & Media
-    "replicate": ("🔄", "Replicate", "ML model hosting"),
-    "stability": ("🎭", "Stability AI", "Image generation"),
-    "cloudinary": ("☁️", "Cloudinary", "Media management"),
-    "imgix": ("🖼️", "Imgix", "Image processing"),
-    "unsplash": ("📷", "Unsplash", "Stock photos"),
+    "replicate": {"icon": "🔄", "name": "Replicate", "description": "ML model hosting"},
+    "stability": {"icon": "🎭", "name": "Stability AI", "description": "Image generation"},
+    "cloudinary": {"icon": "☁️", "name": "Cloudinary", "description": "Media management"},
+    "imgix": {"icon": "🖼️", "name": "Imgix", "description": "Image processing"},
+    "unsplash": {"icon": "📷", "name": "Unsplash", "description": "Stock photos"},
     
     # Other AI Services
-    "huggingface": ("🤗", "Hugging Face", "ML community"),
-    "assemblyai": ("🎤", "AssemblyAI", "Speech recognition"),
-    "elevenlabs": ("🗣️", "ElevenLabs", "Voice synthesis"),
-    "openvoice": ("🎙️", "OpenVoice", "Voice cloning"),
-    "whisper": ("👂", "Whisper API", "Speech-to-text"),
-    "deepgram": ("🎧", "Deepgram", "Voice AI"),
-    "rev_ai": ("📝", "Rev.ai", "Speech-to-text"),
+    "huggingface": {"icon": "🤗", "name": "Hugging Face", "description": "ML community"},
+    "assemblyai": {"icon": "🎤", "name": "AssemblyAI", "description": "Speech recognition"},
+    "elevenlabs": {"icon": "🗣️", "name": "ElevenLabs", "description": "Voice synthesis"},
+    "openvoice": {"icon": "🎙️", "name": "OpenVoice", "description": "Voice cloning"},
+    "whisper": {"icon": "👂", "name": "Whisper API", "description": "Speech-to-text"},
+    "deepgram": {"icon": "🎧", "name": "Deepgram", "description": "Voice AI"},
+    "rev_ai": {"icon": "📝", "name": "Rev.ai", "description": "Speech-to-text"},
     
     # Productivity & Collaboration
-    "notion": ("📓", "Notion", "Workspace & docs"),
-    "airtable": ("🗂️", "Airtable", "Database spreadsheet"),
-    "trello": ("📋", "Trello", "Project management"),
-    "asana": ("✅", "Asana", "Task management"),
-    "linear": ("📐", "Linear", "Issue tracking"),
-    "jira": ("🐛", "Jira", "Project management"),
-    "confluence": ("📄", "Confluence", "Documentation"),
+    "notion": {"icon": "📓", "name": "Notion", "description": "Workspace & docs"},
+    "airtable": {"icon": "🗂️", "name": "Airtable", "description": "Database spreadsheet"},
+    "trello": {"icon": "📋", "name": "Trello", "description": "Project management"},
+    "asana": {"icon": "✅", "name": "Asana", "description": "Task management"},
+    "linear": {"icon": "📐", "name": "Linear", "description": "Issue tracking"},
+    "jira": {"icon": "🐛", "name": "Jira", "description": "Project management"},
+    "confluence": {"icon": "📄", "name": "Confluence", "description": "Documentation"},
     
     # Payment & Commerce
-    "stripe": ("💳", "Stripe", "Payment processing"),
-    "paypal": ("💰", "PayPal", "Payment platform"),
-    "shopify": ("🛒", "Shopify", "E-commerce platform"),
+    "stripe": {"icon": "💳", "name": "Stripe", "description": "Payment processing"},
+    "paypal": {"icon": "💰", "name": "PayPal", "description": "Payment platform"},
+    "shopify": {"icon": "🛒", "name": "Shopify", "description": "E-commerce platform"},
     
     # Security & Auth
-    "auth0": ("🔐", "Auth0", "Authentication"),
-    "okta": ("🆗", "Okta", "Identity management"),
-    "1password": ("🔑", "1Password", "Password manager"),
+    "auth0": {"icon": "🔐", "name": "Auth0", "description": "Authentication"},
+    "okta": {"icon": "🆗", "name": "Okta", "description": "Identity management"},
+    "1password": {"icon": "🔑", "name": "1Password", "description": "Password manager"},
 }
+
+
+def get_encryption_key() -> bytes:
+    """Get encryption key from environment variable.
+    
+    Returns:
+        bytes: A 32-byte key base64 encoded to 44 bytes for Fernet.
+    """
+    env_key = os.getenv("AGENT_VAULT_KEY")
+    if not env_key:
+        raise ValueError("AGENT_VAULT_KEY environment variable not set")
+    
+    # Ensure key is 32 bytes
+    key_bytes = env_key.encode('utf-8')
+    if len(key_bytes) < 32:
+        # Pad to 32 bytes
+        key_bytes = key_bytes.ljust(32, b'\0')
+    elif len(key_bytes) > 32:
+        # Truncate to 32 bytes
+        key_bytes = key_bytes[:32]
+    
+    # Base64 encode for Fernet (44 characters)
+    return base64.urlsafe_b64encode(key_bytes)
+
+
+def encrypt_value(value: str) -> str:
+    """Encrypt a string value.
+    
+    Args:
+        value: The string to encrypt.
+        
+    Returns:
+        str: The encrypted value as a base64 string.
+    """
+    key = get_encryption_key()
+    f = Fernet(key)
+    encrypted = f.encrypt(value.encode('utf-8'))
+    return encrypted.decode('utf-8')
+
+
+def decrypt_value(encrypted_value: str) -> str:
+    """Decrypt an encrypted string value.
+    
+    Args:
+        encrypted_value: The encrypted string.
+        
+    Returns:
+        str: The decrypted value.
+    """
+    key = get_encryption_key()
+    f = Fernet(key)
+    decrypted = f.decrypt(encrypted_value.encode('utf-8'))
+    return decrypted.decode('utf-8')
 
 
 def print_banner():
@@ -209,7 +274,8 @@ def add_key(service, key, interactive):
             row = []
             for j in range(3):
                 if i + j < len(services_list):
-                    key_name, (icon, name, desc) = services_list[i + j]
+                    key_name, service_info = services_list[i + j]
+                    icon = service_info["icon"]
                     row.append(f"{icon} [cyan]{key_name}[/cyan]")
             if row:
                 table.add_row(*row)
@@ -232,7 +298,7 @@ def add_key(service, key, interactive):
     
     # Get API key
     if not key:
-        display_name = SERVICES.get(service, ("🔑", service, ""))[1]
+        display_name = SERVICES.get(service, {}).get("name", service)
         key = getpass.getpass(f"Enter API key for {display_name}: ")
         
         if not key:
@@ -266,7 +332,9 @@ def add_key(service, key, interactive):
         if metadata:
             set_service_metadata(service, **metadata)
         
-        icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+        service_info = SERVICES.get(service, {})
+        icon = service_info.get("icon", "🔑")
+        name = service_info.get("name", service)
         console.print(f"\n[bold green]✅ Added {icon} {name}[/bold green]")
         
         # Log the action
@@ -315,7 +383,9 @@ def list_keys(show_inactive):
     
     for key_data in keys:
         service = key_data['service_name']
-        icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+        service_info = SERVICES.get(service, {})
+        icon = service_info.get("icon", "🔑")
+        name = service_info.get("name", service)
         
         status = "[green]✓ Active[/green]" if key_data.get('is_active', 1) else "[red]✗ Inactive[/red]"
         
@@ -351,7 +421,9 @@ def list_keys(show_inactive):
 def remove_key(service):
     """🗑️ Remove an API key"""
     
-    icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+    service_info = SERVICES.get(service, {})
+    icon = service_info.get("icon", "🔑")
+    name = service_info.get("name", service)
     
     with console.status(f"[bold red]Removing {name}..."):
         success = remove_api_key(service)
@@ -376,7 +448,9 @@ def remove_key(service):
 def rotate_key(service, new_key):
     """🔄 Rotate (update) an API key"""
     
-    icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+    service_info = SERVICES.get(service, {})
+    icon = service_info.get("icon", "🔑")
+    name = service_info.get("name", service)
     
     if not new_key:
         new_key = getpass.getpass(f"Enter new API key for {name}: ")
@@ -667,7 +741,9 @@ def get_key(service):
     key = get_api_key(service)
     
     if key:
-        icon, name, _ = SERVICES.get(service, ("🔑", service, ""))
+        service_info = SERVICES.get(service, {})
+        icon = service_info.get("icon", "🔑")
+        name = service_info.get("name", service)
         console.print(f"\n[bold]{icon} {name} API Key:[/bold]")
         console.print(Panel(key, border_style="green"))
         

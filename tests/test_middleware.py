@@ -47,7 +47,8 @@ class TestSecurityMiddleware:
         from main import app
         
         client = TestClient(app)
-        response = client.get("/openrouter/test\x00evil")
+        # Use URL-encoded null byte (%00) to test middleware handling
+        response = client.get("/openrouter/test%00evil")
         
         # Null bytes should be sanitized or cause error
         assert response.status_code in [400, 404, 422, 500]
@@ -191,14 +192,14 @@ class TestRequestValidation:
         
         client = TestClient(app)
         
-        # Create a payload (10KB is fine)
+        # Create a payload (10KB is fine) - use /health endpoint to avoid forwarding issues
         response = client.post(
-            "/openrouter/test",
+            "/health",
             json={"data": "x" * 10000},
             headers={"Content-Type": "application/json"}
         )
         
-        # Should not be blocked with 413 for this size (may be 404 if service not configured, or other errors)
+        # Should not be blocked with 413 for this size
         assert response.status_code != 413
 
 

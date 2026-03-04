@@ -29,7 +29,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     BLOCKED_PATTERNS = [
         re.compile(r'\.\./'),  # ../ path traversal
         re.compile(r'\.\.\\'),  # Windows path traversal
-        re.compile(r'%2e%2e[/\\]'),  # URL encoded ../
+        re.compile(r'%2e%2e[/\\]', re.IGNORECASE),  # URL encoded ../ (case insensitive)
+        re.compile(r'%2e%2e%2f', re.IGNORECASE),  # URL encoded ../
+        re.compile(r'%2e%2e%5c', re.IGNORECASE),  # URL encoded ..\
         re.compile(r'\x00'),  # Null bytes
         re.compile(r'[~]'),  # Tilde expansion
     ]
@@ -49,6 +51,34 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 status_code=413,
                 content={"detail": "Request entity too large"}
             )
+        
+        # Check URL path for null bytes and traversal patterns (before path_params)
+        raw_path = request.url.path
+        
+        # Check for null bytes in URL
+        if '\x00' in raw_path or '%00' in raw_path:
+            logger.warning(f"Null byte detected in URL: {raw_path}")
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid path"}
+            )
+        
+        # Check total URL path length
+        if len(raw_path) > self.MAX_PATH_LENGTH:
+            logger.warning(f"Path too long: {len(raw_path)} chars")
+            return JSONResponse(
+                status_code=414,
+                content={"detail": "Request URI too long"}
+            )
+        
+        # Check for path traversal patterns in raw URL
+        for pattern in self.BLOCKED_PATTERNS:
+            if pattern.search(raw_path):
+                logger.warning(f"Blocked path pattern detected in URL: {raw_path}")
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid path"}
+                )
         
         # Validate path parameters if present
         path_params = request.path_params
@@ -82,7 +112,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Request URI too long"}
                 )
             
-            # Check for blocked patterns
+            # Check for blocked patterns in decoded path
             for pattern in self.BLOCKED_PATTERNS:
                 if pattern.search(path):
                     logger.warning(f"Blocked path pattern detected: {path}")

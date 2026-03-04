@@ -82,6 +82,12 @@ class TestProxyForwarding:
     def test_openrouter_forwarding(self, mock_env_vars, sample_request_data, sample_response_data):
         """Test forwarding request to OpenRouter."""
         from main import app
+        import main
+        
+        # Set up mock secrets for openrouter
+        main._secrets = {
+            "openrouter": {"api_key": "test-openrouter-key"},
+        }
         
         # Mock OpenRouter API
         route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
