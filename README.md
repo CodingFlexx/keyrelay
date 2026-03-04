@@ -1,39 +1,39 @@
 # Agent Vault Proxy v0.9.1
 
-**Sichere API-Key-Verwaltung für AI Agents – Zero-Friction Integration**
+**Secure API Key Management for AI Agents – Zero-Friction Integration**
 
 > **Version:** 0.9.1 (Production Ready)  
 > **Tests:** 102/102 passing (100%)  
-> **Status:** Feature-complete, bereit für v1.0.0
+> **Status:** Feature-complete, ready for v1.0.0
 
 ---
 
-## 🎯 Was ist das Agent Vault Proxy?
+## 🎯 What is Agent Vault Proxy?
 
-Ein **sicherer Proxy** der zwischen deinen AI Agents und externen APIs sitzt. Agents verwenden **Dummy-Keys**, der Proxy injiziert die **echten API-Keys** – ohne dass Agents jemals echte Keys sehen.
+A **secure proxy** that sits between your AI agents and external APIs. Agents use **dummy keys**, the proxy injects the **real API keys** – without agents ever seeing real keys.
 
-### Das Problem
+### The Problem
 ```python
-# ❌ VORHER: API-Keys im Agent-Code
-OPENAI_API_KEY = "sk-abc123..."  # Gefahr: Leak, Git-Commit, Logs
+# ❌ BEFORE: API keys in agent code
+OPENAI_API_KEY = "sk-abc123..."  # Risk: Leak, Git commit, logs
 ```
 
-### Die Lösung
+### The Solution
 ```python
-# ✅ NACHHER: Nur Dummy-Key nötig
-OPENAI_API_KEY = "dummy-key"  # Proxy ersetzt mit echtem Key
+# ✅ AFTER: Only dummy key needed
+OPENAI_API_KEY = "dummy-key"  # Proxy replaces with real key
 BASE_URL = "http://vault:8080/openai"
 ```
 
 ---
 
-## 🏗️ Zwei Architektur-Optionen
+## 🏗️ Two Architecture Options
 
-### Option 1: Lokal (Gleiche Maschine)
+### Option 1: Local (Same Machine)
 
 ```
 ┌─────────────────────────────────────────┐
-│  Host (Deine VM/Server)                 │
+│  Host (Your VM/Server)                  │
 │  ┌─────────────┐    ┌─────────────────┐ │
 │  │  AI Agent   │───►│  Agent Vault    │ │
 │  │  (Root)     │    │  (Docker)       │ │
@@ -43,104 +43,104 @@ BASE_URL = "http://vault:8080/openai"
 └─────────────────────────────────────────┘
 ```
 
-**Wann verwenden:**
-- Einzelner Agent auf dedizierter VM
-- Schnelle Einrichtung
-- Entwicklung/Testing
+**When to use:**
+- Single agent on dedicated VM
+- Quick setup
+- Development/Testing
 
-**Vorteile:**
-- ✅ Einfachstes Setup (docker-compose up)
-- ✅ Geringste Latenz
-- ✅ Keine Netzwerk-Konfiguration
+**Benefits:**
+- ✅ Simplest setup (docker-compose up)
+- ✅ Lowest latency
+- ✅ No network configuration
 
-**Sicherheit:**
-- Agent hat theoretisch Root-Zugriff auf Vault möglich
-- Defense in Depth: Encryption, Audit-Logging, Container-Isolation
-- Für bösartige Agents: Siehe Option 2
+**Security:**
+- Agent theoretically has root access to vault possible
+- Defense in depth: Encryption, audit logging, container isolation
+- For malicious agents: See Option 2
 
 ---
 
-### Option 2: Remote (Netzwerk-getrennt)
+### Option 2: Remote (Network-separated)
 
 ```
 ┌─────────────┐      Internet/VPN      ┌─────────────────┐
 │   Agent     │  ═══════════════════►  │   Vault Server  │
-│  (Lokal)    │    HTTPS + Auth Token  │  (Remote)       │
+│  (Local)    │    HTTPS + Auth Token  │  (Remote)       │
 │             │  ◄═══════════════════   │  Port 443       │
 └─────────────┘                        └─────────────────┘
        │                                      │
        │                                      │
-       └─────────────── API-Keys ─────────────┘
-              (nie beim Agent sichtbar)
+       └─────────────── API Keys ─────────────┘
+              (never visible to agent)
 ```
 
-**Wann verwenden:**
-- Mehrere Agents zentral verwalten
-- Höchste Sicherheitsanforderungen
-- Production mit unterschiedlichen Agent-Teams
+**When to use:**
+- Multiple agents centrally managed
+- Highest security requirements
+- Production with different agent teams
 
-**Vorteile:**
-- ✅ Physische Trennung = Höchste Sicherheit
-- ✅ Zentrale Key-Verwaltung
-- ✅ Agents können Vault nicht kompromittieren
-- ✅ Audit-Logging zentralisiert
+**Benefits:**
+- ✅ Physical separation = Highest security
+- ✅ Centralized key management
+- ✅ Agents cannot compromise vault
+- ✅ Centralized audit logging
 
 **Setup:**
-- Siehe [Remote Setup Guide](docs/REMOTE_SETUP.md)
-- TLS/HTTPS erforderlich
-- Bearer Token Auth
+- See [Remote Setup Guide](docs/REMOTE_SETUP.md)
+- TLS/HTTPS required
+- Bearer token auth
 
 ---
 
-## 💡 Warum Agent Vault Proxy verwenden?
+## 💡 Why Use Agent Vault Proxy?
 
-| Problem | Lösung |
+| Problem | Solution |
 |---------|--------|
-| **API-Keys in Git** | Keys niemals im Code |
-| **Keys in Logs** | Proxy filtert Keys aus |
-| **Rotation-Overhead** | Zentral rotieren, Agents unberührt |
-| **Multi-Key Chaos** | Ein Vault, 30+ Services |
-| **Keine Audit-Trails** | Jeder Request geloggt |
-| **Agent-Kompromittierung** | Keys bleiben sicher im Vault |
+| **API keys in Git** | Keys never in code |
+| **Keys in logs** | Proxy filters keys out |
+| **Rotation overhead** | Rotate centrally, agents untouched |
+| **Multi-key chaos** | One vault, 30+ services |
+| **No audit trails** | Every request logged |
+| **Agent compromise** | Keys stay secure in vault |
 
 ### Zero-Friction Integration
 
-**Was sich ändert:** Nur 2 Zeilen
+**What changes:** Only 2 lines
 ```python
-# VORHER
+# BEFORE
 client = OpenAI(api_key="sk-real-key...")
 
-# NACHHER
+# AFTER
 client = OpenAI(
-    api_key="dummy-key",  # ← Änderung 1
-    base_url="http://vault:8080/openai"  # ← Änderung 2
+    api_key="dummy-key",  # ← Change 1
+    base_url="http://vault:8080/openai"  # ← Change 2
 )
 ```
 
-**Was gleich bleibt:** Alles andere
-- Modelle
-- Parameter (temperature, max_tokens)
-- Request/Response Format
-- Fehlerbehandlung
+**What stays the same:** Everything else
+- Models
+- Parameters (temperature, max_tokens)
+- Request/Response format
+- Error handling
 - SDK/Client
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Repository klonen
+### 1. Clone Repository
 ```bash
 git clone https://github.com/CodingFlexx/agent-vault-proxy.git
 cd agent-vault-proxy
 ```
 
-### 2. Konfigurieren
+### 2. Configure
 
-**Option A: CLI (Empfohlen)**
+**Option A: CLI (Recommended)**
 ```bash
 python cli.py
-# → "Setup Vault" wählen
-# → API-Keys hinzufügen
+# → Select "Setup Vault"
+# → Add API keys
 ```
 
 **Option B: Environment Variables**
@@ -152,15 +152,15 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 **Option C: secrets.json**
 ```bash
 cp secrets.json.example secrets.json
-# Datei editieren
+# Edit file
 ```
 
-### 3. Starten
+### 3. Start
 ```bash
 docker-compose up -d
 ```
 
-### 4. Testen
+### 4. Test
 ```bash
 curl http://localhost:8080/health
 ```
@@ -169,28 +169,28 @@ curl http://localhost:8080/health
 
 ## 📊 Features
 
-### 🔐 Sicherheit
-- **Verschlüsselter Vault** - SQLite mit Fernet (AES-128-CBC + HMAC)
-- **Audit Logging** - Jeder Request mit Timestamp
-- **Rate Limiting** - 60 req/min pro IP
-- **Circuit Breaker** - Automatisches Failover
-- **Path Traversal Protection** - Blocks `../`, Null Bytes
+### 🔐 Security
+- **Encrypted Vault** - SQLite with Fernet (AES-128-CBC + HMAC)
+- **Audit Logging** - Every request with timestamp
+- **Rate Limiting** - 60 req/min per IP
+- **Circuit Breaker** - Automatic failover
+- **Path Traversal Protection** - Blocks `../`, null bytes
 - **Request Size Limit** - 100MB max
 
 ### 🛠️ Management
 - **Interactive CLI** - Typer + Rich UI
 - **30+ Services** - LLMs, Vector DBs, Search, Git, Cloud
-- **Health Checks** - `/health` und `/health/services`
+- **Health Checks** - `/health` and `/health/services`
 - **Zero Config** - Docker-ready
 
 ### 🔌 Integration
-- **OpenAI-kompatibel** - Funktioniert mit allen OpenAI-Clients
-- **Drop-in Replacement** - Nur base_url ändern
-- **Dummy Keys** - Beliebiger String funktioniert
+- **OpenAI-compatible** - Works with all OpenAI clients
+- **Drop-in Replacement** - Just change base_url
+- **Dummy Keys** - Any string works
 
 ---
 
-## 📡 Unterstützte Services (30+)
+## 📡 Supported Services (30+)
 
 ### LLM APIs
 | Endpoint | Service | Auth |
@@ -294,36 +294,36 @@ services:
 
 ### 3. CI/CD Pipelines
 ```bash
-# Keine echten Keys in GitHub Secrets nötig
+# No real keys in GitHub Secrets needed
 export OPENAI_API_KEY=dummy-key
 export OPENAI_BASE_URL=http://vault:8080/openai
 pytest tests/
 ```
 
-### 4. Entwicklerteams
-- Junior-Devs bekommen nur Dummy-Keys
-- Echte Keys bleiben im Vault
-- Keine Angst vor Accidental Commits
+### 4. Development Teams
+- Junior devs get only dummy keys
+- Real keys stay in vault
+- No fear of accidental commits
 
 ---
 
-## 📚 Dokumentation
+## 📚 Documentation
 
-| Guide | Beschreibung |
-|-------|--------------|
-| [Remote Setup](docs/REMOTE_SETUP.md) | Vault auf separatem Server |
-| [HTTPS/TLS](docs/HTTPS_SETUP.md) | TLS-Zertifikate einrichten |
-| [Authentication](docs/AUTH_SETUP.md) | Agent-to-Vault Auth |
+| Guide | Description |
+|-------|-------------|
+| [Remote Setup](docs/REMOTE_SETUP.md) | Vault on separate server |
+| [HTTPS/TLS](docs/HTTPS_SETUP.md) | Setup TLS certificates |
+| [Authentication](docs/AUTH_SETUP.md) | Agent-to-Vault auth |
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-# Alle Tests
+# All tests
 python -m pytest tests/ -v
 
-# Mit Coverage
+# With coverage
 python -m pytest tests/ --cov=.
 ```
 
@@ -331,18 +331,17 @@ python -m pytest tests/ --cov=.
 
 ---
 
-## 🛡️ Sicherheitsmodell
+## 🛡️ Security Model
 
 ```
 ┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
 │  AI Agent   │ ─────────────────► │  Agent Vault    │ ─────────────────► │   OpenAI    │
 │             │                    │  Proxy          │                    │   API       │
-│  - Keine    │  Model, Params     │  ├─ Encrypted   │                    │             │
-│    echten   │  (unchanged)       │  │   SQLite      │                    │             │
-│    Keys     │                    │  ├─ CLI         │                    │             │
-│  - Kann     │                    │  ├─ Middleware  │                    │             │
-│    nicht    │                    │  └─ Audit Log   │                    │             │
-│    leaken   │                    │                 │                    │             │
+│  - No real  │  Model, Params     │  ├─ Encrypted   │                    │             │
+│    keys     │  (unchanged)       │  │   SQLite      │                    │             │
+│  - Cannot   │                    │  ├─ CLI         │                    │             │
+│    leak     │                    │  ├─ Middleware  │                    │             │
+│             │                    │  └─ Audit Log   │                    │             │
 └─────────────┘                    └─────────────────┘                    └─────────────┘
        ▲                                    │                                    │
        │                                    │                                    │
@@ -352,7 +351,7 @@ python -m pytest tests/ --cov=.
 
 ---
 
-## 🗺️ Roadmap zu v1.0.0
+## 🗺️ Roadmap to v1.0.0
 
 - [x] Core Proxy
 - [x] Encrypted SQLite Vault
@@ -360,13 +359,13 @@ python -m pytest tests/ --cov=.
 - [x] Middleware Stack
 - [x] Audit Logging
 - [x] 100% Test Coverage
-- [ ] RBAC (geplant)
-- [ ] Web Dashboard (geplant)
-- [ ] Key Rotation Automation (geplant)
+- [ ] RBAC (planned)
+- [ ] Web Dashboard (planned)
+- [ ] Key Rotation Automation (planned)
 
 ---
 
-## 📄 Lizenz
+## 📄 License
 
 MIT License
 
