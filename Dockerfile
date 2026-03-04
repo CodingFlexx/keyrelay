@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY main.py .
+COPY middleware.py .
+COPY database.py .
+COPY proxy_v2.py .
+COPY cli.py .
 COPY secrets.json.example secrets.json.example
 
 # Create directory for secrets (mounted at runtime)
