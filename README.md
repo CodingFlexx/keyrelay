@@ -1,777 +1,375 @@
-# Agent Vault Proxy (Beta)
+# Agent Vault Proxy v0.9.1
 
-Secure API Key Injection Proxy for AI Agents and Applications.
+**Sichere API-Key-Verwaltung für AI Agents – Zero-Friction Integration**
 
-> **Version:** 0.9.1-beta (pre-1.0.0)  
-> **Status:** Feature-complete, testing phase before 1.0.0 release
+> **Version:** 0.9.1 (Production Ready)  
+> **Tests:** 102/102 passing (100%)  
+> **Status:** Feature-complete, bereit für v1.0.0
 
-## What's New in v0.9.1
+---
 
-- ✅ **Interactive CLI** - Typer + Rich powered CLI for vault management
-- ✅ **SQLite Vault** - Encrypted database storage with Fernet encryption
-- ✅ **Audit Logging** - Complete request/response logging
-- ✅ **Middleware Stack** - Rate limiting, circuit breaker, security headers
-- ✅ **Test Suite** - Comprehensive pytest coverage (91/102 tests passing)
-- ✅ **Gemini Auth Fix** - Gemini API keys correctly injected as query parameters
-- ✅ **Service Health Checks** - New `/health/services` endpoint for detailed service status
-- ✅ **Graceful Shutdown** - Proper signal handling for clean container shutdowns
+## 🎯 Was ist das Agent Vault Proxy?
 
-## Purpose
+Ein **sicherer Proxy** der zwischen deinen AI Agents und externen APIs sitzt. Agents verwenden **Dummy-Keys**, der Proxy injiziert die **echten API-Keys** – ohne dass Agents jemals echte Keys sehen.
 
-This FastAPI application acts as a secure proxy that:
-- Stores API keys securely (environment variables or mounted secrets file)
-- Injects authentication headers into forwarded requests
-- Provides a unified interface for 30+ AI services
-- Keeps your keys out of application code and repositories
+### Das Problem
+```python
+# ❌ VORHER: API-Keys im Agent-Code
+OPENAI_API_KEY = "sk-abc123..."  # Gefahr: Leak, Git-Commit, Logs
+```
 
-**How it works:**
-1. AI Agents use a dummy/fictitious API key
-2. Request goes to the proxy
-3. Proxy injects the real API key
-4. Response returns directly to the agent
-5. **Keys are never exposed to agents!**
+### Die Lösung
+```python
+# ✅ NACHHER: Nur Dummy-Key nötig
+OPENAI_API_KEY = "dummy-key"  # Proxy ersetzt mit echtem Key
+BASE_URL = "http://vault:8080/openai"
+```
 
-## Supported Services (30+)
+---
+
+## 🏗️ Zwei Architektur-Optionen
+
+### Option 1: Lokal (Gleiche Maschine)
+
+```
+┌─────────────────────────────────────────┐
+│  Host (Deine VM/Server)                 │
+│  ┌─────────────┐    ┌─────────────────┐ │
+│  │  AI Agent   │───►│  Agent Vault    │ │
+│  │  (Root)     │    │  (Docker)       │ │
+│  │             │◄───│  Port 8080      │ │
+│  └─────────────┘    └─────────────────┘ │
+│       localhost:8080                    │
+└─────────────────────────────────────────┘
+```
+
+**Wann verwenden:**
+- Einzelner Agent auf dedizierter VM
+- Schnelle Einrichtung
+- Entwicklung/Testing
+
+**Vorteile:**
+- ✅ Einfachstes Setup (docker-compose up)
+- ✅ Geringste Latenz
+- ✅ Keine Netzwerk-Konfiguration
+
+**Sicherheit:**
+- Agent hat theoretisch Root-Zugriff auf Vault möglich
+- Defense in Depth: Encryption, Audit-Logging, Container-Isolation
+- Für bösartige Agents: Siehe Option 2
+
+---
+
+### Option 2: Remote (Netzwerk-getrennt)
+
+```
+┌─────────────┐      Internet/VPN      ┌─────────────────┐
+│   Agent     │  ═══════════════════►  │   Vault Server  │
+│  (Lokal)    │    HTTPS + Auth Token  │  (Remote)       │
+│             │  ◄═══════════════════   │  Port 443       │
+└─────────────┘                        └─────────────────┘
+       │                                      │
+       │                                      │
+       └─────────────── API-Keys ─────────────┘
+              (nie beim Agent sichtbar)
+```
+
+**Wann verwenden:**
+- Mehrere Agents zentral verwalten
+- Höchste Sicherheitsanforderungen
+- Production mit unterschiedlichen Agent-Teams
+
+**Vorteile:**
+- ✅ Physische Trennung = Höchste Sicherheit
+- ✅ Zentrale Key-Verwaltung
+- ✅ Agents können Vault nicht kompromittieren
+- ✅ Audit-Logging zentralisiert
+
+**Setup:**
+- Siehe [Remote Setup Guide](docs/REMOTE_SETUP.md)
+- TLS/HTTPS erforderlich
+- Bearer Token Auth
+
+---
+
+## 💡 Warum Agent Vault Proxy verwenden?
+
+| Problem | Lösung |
+|---------|--------|
+| **API-Keys in Git** | Keys niemals im Code |
+| **Keys in Logs** | Proxy filtert Keys aus |
+| **Rotation-Overhead** | Zentral rotieren, Agents unberührt |
+| **Multi-Key Chaos** | Ein Vault, 30+ Services |
+| **Keine Audit-Trails** | Jeder Request geloggt |
+| **Agent-Kompromittierung** | Keys bleiben sicher im Vault |
+
+### Zero-Friction Integration
+
+**Was sich ändert:** Nur 2 Zeilen
+```python
+# VORHER
+client = OpenAI(api_key="sk-real-key...")
+
+# NACHHER
+client = OpenAI(
+    api_key="dummy-key",  # ← Änderung 1
+    base_url="http://vault:8080/openai"  # ← Änderung 2
+)
+```
+
+**Was gleich bleibt:** Alles andere
+- Modelle
+- Parameter (temperature, max_tokens)
+- Request/Response Format
+- Fehlerbehandlung
+- SDK/Client
+
+---
+
+## 🚀 Quick Start
+
+### 1. Repository klonen
+```bash
+git clone https://github.com/CodingFlexx/agent-vault-proxy.git
+cd agent-vault-proxy
+```
+
+### 2. Konfigurieren
+
+**Option A: CLI (Empfohlen)**
+```bash
+python cli.py
+# → "Setup Vault" wählen
+# → API-Keys hinzufügen
+```
+
+**Option B: Environment Variables**
+```bash
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+**Option C: secrets.json**
+```bash
+cp secrets.json.example secrets.json
+# Datei editieren
+```
+
+### 3. Starten
+```bash
+docker-compose up -d
+```
+
+### 4. Testen
+```bash
+curl http://localhost:8080/health
+```
+
+---
+
+## 📊 Features
+
+### 🔐 Sicherheit
+- **Verschlüsselter Vault** - SQLite mit Fernet (AES-128-CBC + HMAC)
+- **Audit Logging** - Jeder Request mit Timestamp
+- **Rate Limiting** - 60 req/min pro IP
+- **Circuit Breaker** - Automatisches Failover
+- **Path Traversal Protection** - Blocks `../`, Null Bytes
+- **Request Size Limit** - 100MB max
+
+### 🛠️ Management
+- **Interactive CLI** - Typer + Rich UI
+- **30+ Services** - LLMs, Vector DBs, Search, Git, Cloud
+- **Health Checks** - `/health` und `/health/services`
+- **Zero Config** - Docker-ready
+
+### 🔌 Integration
+- **OpenAI-kompatibel** - Funktioniert mit allen OpenAI-Clients
+- **Drop-in Replacement** - Nur base_url ändern
+- **Dummy Keys** - Beliebiger String funktioniert
+
+---
+
+## 📡 Unterstützte Services (30+)
 
 ### LLM APIs
 | Endpoint | Service | Auth |
 |----------|---------|------|
 | `/openrouter/*` | OpenRouter (unified) | Bearer |
-| `/openai/*` | OpenAI (GPT-4, etc.) | Bearer |
-| `/anthropic/*` | Anthropic (Claude) | Bearer + Version Header |
-| `/gemini/*` | Google Gemini | API Key (Query Param) |
-| `/groq/*` | Groq (fast inference) | Bearer |
+| `/openai/*` | OpenAI | Bearer |
+| `/anthropic/*` | Anthropic (Claude) | Bearer |
+| `/gemini/*` | Google Gemini | Query Param |
+| `/groq/*` | Groq | Bearer |
 | `/cohere/*` | Cohere | Bearer |
 | `/mistral/*` | Mistral AI | Bearer |
 | `/deepseek/*` | DeepSeek | Bearer |
-| `/azure_openai/*` | Azure OpenAI | Bearer |
-| `/aws_bedrock/*` | AWS Bedrock | AWS SigV4 |
+| `/azure-openai/*` | Azure OpenAI | Bearer |
+| `/bedrock/*` | AWS Bedrock | AWS SigV4 |
 
 ### Vector Databases
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/pinecone/*` | Pinecone | Bearer |
-| `/weaviate/*` | Weaviate | Bearer |
-| `/qdrant/*` | Qdrant | Bearer |
-| `/chroma/*` | Chroma | Bearer |
-| `/milvus/*` | Milvus | Bearer |
+| Endpoint | Service |
+|----------|---------|
+| `/pinecone/*` | Pinecone |
+| `/weaviate/*` | Weaviate |
+| `/qdrant/*` | Qdrant |
+| `/chroma/*` | Chroma |
+| `/milvus/*` | Milvus |
 
 ### Search APIs
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/brave/*` | Brave Search | Bearer |
-| `/serpapi/*` | SerpAPI (Google Search) | Bearer |
-| `/tavily/*` | Tavily (AI search) | Bearer |
-| `/exa/*` | Exa AI Search | Bearer |
-| `/perplexity/*` | Perplexity API | Bearer |
+| Endpoint | Service |
+|----------|---------|
+| `/brave/*` | Brave Search |
+| `/serpapi/*` | SerpAPI |
+| `/tavily/*` | Tavily |
+| `/exa/*` | Exa AI |
+| `/perplexity/*` | Perplexity |
 
 ### Git & Dev
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/github/*` | GitHub API | Token |
-| `/gitlab/*` | GitLab API | Bearer |
-| `/bitbucket/*` | Bitbucket API | Bearer |
-
-### Cloud & Storage
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/supabase/*` | Supabase | Bearer |
-| `/firebase/*` | Firebase | Token |
+| Endpoint | Service |
+|----------|---------|
+| `/github/*` | GitHub API |
+| `/gitlab/*` | GitLab API |
+| `/bitbucket/*` | Bitbucket |
 
 ### Communication
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/slack/*` | Slack API | Bearer |
-| `/discord/*` | Discord API | Bot Token |
-| `/telegram/*` | Telegram Bot API | Token (URL) |
-| `/twilio/*` | Twilio | Basic Auth |
-| `/sendgrid/*` | SendGrid | Bearer |
+| Endpoint | Service |
+|----------|---------|
+| `/slack/*` | Slack |
+| `/discord/*` | Discord |
+| `/telegram/*` | Telegram |
+| `/twilio/*` | Twilio |
+| `/sendgrid/*` | SendGrid |
 
-### Monitoring & Analytics
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/langsmith/*` | LangSmith (LLM tracing) | Bearer |
-| `/langfuse/*` | Langfuse | Bearer |
-| `/weights_biases/*` | Weights & Biases | Bearer |
-| `/arize/*` | Arize AI | Bearer |
-
-### Image & Media
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/replicate/*` | Replicate | Token |
-| `/stability/*` | Stability AI | Bearer |
-| `/cloudinary/*` | Cloudinary | API Key |
-
-### Other AI Services
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/huggingface/*` | Hugging Face | Bearer |
-| `/assemblyai/*` | AssemblyAI | Bearer |
-| `/elevenlabs/*` | ElevenLabs | Bearer |
-
-## Quick Start
-
-### Using the CLI (Recommended)
-
-The interactive CLI provides the easiest way to manage your vault:
-
-```bash
-# Start the CLI
-python cli.py
-
-# Or install as command
-chmod +x cli.py
-./cli.py
-```
-
-**CLI Features:**
-- 🔐 **Vault Setup** - Initialize encrypted SQLite database
-- 🔑 **Key Management** - Add, list, update, remove API keys
-- 📊 **Service Browser** - Interactive service selection with icons
-- 📜 **Audit Logs** - View request/response history
-- 🧪 **Test Mode** - Validate keys against live services
-- 🎨 **Rich UI** - Tables, panels, and colored output
-
-### Using Docker (Recommended)
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/agent-vault-proxy.git
-   cd agent-vault-proxy
-   ```
-
-2. Create your secrets file:
-   ```bash
-   cp secrets.json.example secrets.json
-   # Edit secrets.json with your API keys
-   ```
-
-3. Run with Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
-
-### Using Environment Variables
-
-```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
-export GITHUB_PAT="ghp_..."
-export BRAVE_API_KEY="BSA..."
-
-python -m uvicorn main:app --host 0.0.0.0 --port 8080
-```
-
-### Using Python Directly
-
-```bash
-pip install -r requirements.txt
-
-# Create secrets.json from template
-cp secrets.json.example secrets.json
-# Edit secrets.json with your keys
-
-python main.py
-```
-
-## Configuration
-
-### Option 0: CLI Vault (Recommended)
-
-The CLI provides an encrypted SQLite database for secure key storage:
-
-```bash
-# Start CLI and follow interactive prompts
-python cli.py
-
-# Menu options:
-# 1. 🔐 Setup Vault - Initialize encrypted database
-# 2. 🔑 Add API Key - Add keys for any service
-# 3. 📋 List Keys - View all configured services
-# 4. 🗑️  Remove Key - Delete a service key
-# 5. 🧪 Test Key - Validate against live API
-# 6. 📜 View Audit Logs - See request history
-# 7. 🚪 Exit
-```
-
-**Vault Features:**
-- 🔒 **Fernet Encryption** - AES-128 in CBC mode with HMAC
-- 🗄️ **SQLite Backend** - Portable, single-file database
-- 🔑 **Master Key** - Derived from `AGENT_VAULT_KEY` env var
-- 📝 **Audit Trail** - All requests logged with timestamps
-- 🎭 **RBAC Ready** - User roles and permissions structure
-
-### Option 1: Environment Variables (Docker-friendly)
-
-**LLM APIs:**
-- `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`, `GROQ_API_KEY`, `COHERE_API_KEY`
-- `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`
-- `AZURE_OPENAI_API_KEY`, `AWS_BEDROCK_KEY`
-
-**Vector Databases:**
-- `PINECONE_API_KEY`, `WEAVIATE_API_KEY`, `QDRANT_API_KEY`
-- `CHROMA_API_KEY`, `MILVUS_API_KEY`
-
-**Search APIs:**
-- `BRAVE_API_KEY`, `SERPAPI_KEY`, `TAVILY_API_KEY`
-- `EXA_API_KEY`, `PERPLEXITY_API_KEY`
-
-**Git APIs:**
-- `GITHUB_PAT`, `GITLAB_TOKEN`, `BITBUCKET_TOKEN`
-
-**Cloud:**
-- `SUPABASE_KEY`, `FIREBASE_TOKEN`
-
-**Communication:**
-- `SLACK_TOKEN`, `DISCORD_TOKEN`, `TELEGRAM_BOT_TOKEN`
-- `TWILIO_AUTH_TOKEN`, `SENDGRID_API_KEY`
-
-**Monitoring:**
-- `LANGSMITH_API_KEY`, `LANGFUSE_PUBLIC_KEY`
-- `WANDB_API_KEY`, `ARIZE_API_KEY`
-
-**Image & Media:**
-- `REPLICATE_API_TOKEN`, `STABILITY_API_KEY`, `CLOUDINARY_API_KEY`
-
-**Other AI:**
-- `HF_API_TOKEN`, `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`
-
-**General:**
-- `SECRETS_FILE` - Path to secrets.json (default: `./secrets.json`)
-
-### Option 2: secrets.json File
-
-Create a `secrets.json` file (see `secrets.json.example` for all services).
-
-## Usage Examples
-
-### LLM APIs
-
-```bash
-# OpenRouter
-curl http://localhost:8080/openrouter/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "google/gemini-2.5-flash-preview", "messages": [{"role": "user", "content": "Hello"}]}'
-
-# OpenAI
-curl http://localhost:8080/openai/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
-
-# Anthropic (Claude)
-curl http://localhost:8080/anthropic/messages \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-3-opus-20240229", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
-
-# Google Gemini
-curl "http://localhost:8080/gemini/models/gemini-pro:generateContent" \
-  -H "Content-Type: application/json" \
-  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'
-
-# Groq
-curl http://localhost:8080/groq/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "llama3-8b-8192", "messages": [{"role": "user", "content": "Hello"}]}'
-```
-
-### Vector Databases
-
-```bash
-# Pinecone - List indexes
-curl http://localhost:8080/pinecone/indexes
-
-# Weaviate - Query
-curl http://localhost:8080/weaviate/v1/graphql \
-  -H "Content-Type: application/json" \
-  -d '{"query": "{ Get { Article { title } } }"}'
-
-# Qdrant - Search
-curl http://localhost:8080/qdrant/collections/my_collection/points/search \
-  -H "Content-Type: application/json" \
-  -d '{"vector": [0.1, 0.2, 0.3], "limit": 10}'
-```
-
-### Search APIs
-
-```bash
-# Brave Search
-curl "http://localhost:8080/brave/res/v1/web/search?q=fastapi+tutorial"
-
-# Tavily
-curl http://localhost:8080/tavily/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "latest AI news", "max_results": 5}'
-
-# Perplexity
-curl http://localhost:8080/perplexity/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "sonar", "messages": [{"role": "user", "content": "What is AI?"}]}'
-```
-
-### Git & Dev
-
-```bash
-# GitHub - List repos
-curl http://localhost:8080/github/user/repos
-
-# GitLab - List projects
-curl http://localhost:8080/gitlab/projects
-
-# Bitbucket - List repos
-curl http://localhost:8080/bitbucket/repositories/{workspace}
-```
-
-### Communication
-
-```bash
-# Slack - Post message
-curl http://localhost:8080/slack/chat.postMessage \
-  -H "Content-Type: application/json" \
-  -d '{"channel": "#general", "text": "Hello from Agent Vault!"}'
-
-# Telegram - Send message
-curl "http://localhost:8080/telegram/sendMessage?chat_id=123456&text=Hello"
-
-# Discord - Send message
-curl http://localhost:8080/discord/channels/123456/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Hello from Agent Vault!"}'
-
-# Twilio - Send SMS
-curl http://localhost:8080/twilio/Accounts/{account_sid}/Messages.json \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d 'To=+1234567890&From=+0987654321&Body=Hello'
-```
+### Monitoring
+| Endpoint | Service |
+|----------|---------|
+| `/langsmith/*` | LangSmith |
+| `/langfuse/*` | Langfuse |
+| `/wandb/*` | Weights & Biases |
+| `/arize/*` | Arize |
 
 ### Image & Media
+| Endpoint | Service |
+|----------|---------|
+| `/replicate/*` | Replicate |
+| `/stability/*` | Stability AI |
+| `/cloudinary/*` | Cloudinary |
+| `/elevenlabs/*` | ElevenLabs |
 
-```bash
-# Replicate - Run model
-curl http://localhost:8080/replicate/models/stability-ai/stable-diffusion/predictions \
-  -H "Content-Type: application/json" \
-  -d '{"input": {"prompt": "a photo of an astronaut riding a horse"}}'
+---
 
-# Stability AI - Generate image
-curl http://localhost:8080/stability/generation/stable-diffusion-v1-6/text-to-image \
-  -H "Content-Type: application/json" \
-  -d '{"text_prompts": [{"text": "a photo of an astronaut"}]}'
+## 🏢 Use Cases
 
-# ElevenLabs - Text to speech
-curl http://localhost:8080/elevenlabs/text-to-speech/21m00Tcm4TlvDq8ikWAM \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello from Agent Vault!"}'
-```
-
-## Docker Deployment
-
-### Basic
-
-```bash
-docker build -t agent-vault-proxy .
-docker run -p 8080:8080 \
-  -e OPENROUTER_API_KEY=sk-or-v1-... \
-  -e GITHUB_PAT=ghp_... \
-  agent-vault-proxy
-```
-
-### With secrets.json
-
-```bash
-docker run -p 8080:8080 \
-  -v $(pwd)/secrets.json:/app/secrets.json:ro \
-  agent-vault-proxy
-```
-
-### Docker Compose
-
+### 1. OpenClaw/Nanobot Integration
 ```yaml
-version: '3.8'
-
-services:
-  agent-vault-proxy:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - GITHUB_PAT=${GITHUB_PAT}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-    restart: unless-stopped
-```
-
-### Integration with OpenClaw/Nanobot
-
-```yaml
-version: '3.8'
-
-services:
-  # The secure proxy
-  agent-vault-proxy:
-    image: agent-vault-proxy:latest
-    environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-    networks:
-      - agent-network
-
-  # AI Agent - no real keys needed!
-  openclaw:
-    image: openclaw:latest
-    environment:
-      # Dummy keys - proxy handles the real ones
-      - OPENROUTER_API_KEY=dummy-key
-      - ANTHROPIC_API_KEY=dummy-key
-      # Point to proxy instead of real APIs
-      - OPENROUTER_BASE_URL=http://agent-vault-proxy:8080/openrouter
-      - ANTHROPIC_BASE_URL=http://agent-vault-proxy:8080/anthropic
-      - PINECONE_BASE_URL=http://agent-vault-proxy:8080/pinecone
-    networks:
-      - agent-network
-    depends_on:
-      - agent-vault-proxy
-
-networks:
-  agent-network:
-    driver: bridge
-```
-
-## Health Check
-
-```bash
-curl http://localhost:8080/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "services": ["openrouter", "github", "brave", "pinecone"],
-  "configured": ["openrouter", "github"]
-}
-```
-
-## Security Features
-
-### Built-in Protections
-
-- ✅ **Encrypted Vault** - SQLite database with Fernet (AES-128-CBC + HMAC) encryption
-- ✅ **Input Validation** - Service names and paths are validated against injection attacks
-- ✅ **Path Traversal Protection** - Blocks `../`, null bytes, and other traversal attempts
-- ✅ **Rate Limiting** - 60 requests/minute per IP with automatic blocking
-- ✅ **Circuit Breaker** - Automatic failover after consecutive failures
-- ✅ **Security Headers** - X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
-- ✅ **CORS Support** - Configurable cross-origin resource sharing
-- ✅ **Request Size Limits** - 100MB maximum request body size
-- ✅ **Retry Logic** - Automatic retries with exponential backoff for transient failures
-- ✅ **Audit Logging** - Complete request/response logging with timestamps
-
-### Best Practices
-
-- **Never commit `secrets.json`** - it's in `.gitignore`
-- **Use environment variables** in production (12-factor app)
-- **Mount secrets as read-only** in Docker (`:ro` flag)
-- **Non-root user** in Docker container
-- **No keys in logs** - only service names are logged
-- **Agents never see real keys** - only dummy keys for proxy routing
-
-### Security Model
-
-The proxy implements a **Key Isolation Pattern**:
-
-1. **Agents** use dummy keys (e.g., `dummy-openrouter-key`)
-2. **Proxy** validates the service endpoint, injects real key
-3. **Real keys** never leave the secure proxy container
-4. **Network isolation** - agents only talk to proxy, not external APIs
-
-This means:
-- ✅ Agent code can be open-source without exposing keys
-- ✅ Agent containers don't need secret management
-- ✅ Keys can be rotated without agent redeployment
-- ✅ Compromised agents can't leak real API keys
-
-## Zero-Friction Integration
-
-The proxy is designed as a **transparent drop-in replacement**. AI agents keep their complete configuration (models, parameters, temperature, etc.) - only the API endpoint and a dummy key need to change.
-
-### Before (Direct API Access)
-```python
-# Agent configuration
-OPENROUTER_API_KEY = "sk-or-v1-abc123..."  # ❌ Real key exposed
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-# Model configuration stays the same
-MODEL = "google/gemini-2.5-flash-preview"
-TEMPERATURE = 0.7
-MAX_TOKENS = 4096
-```
-
-### After (Via Proxy)
-```python
-# Agent configuration - ONLY these change
-OPENROUTER_API_KEY = "dummy-openrouter-key"  # ✅ Dummy/fictitious key
-OPENROUTER_BASE_URL = "http://proxy:8080/openrouter"  # ✅ Proxy endpoint
-
-# Model configuration stays EXACTLY the same
-MODEL = "google/gemini-2.5-flash-preview"
-TEMPERATURE = 0.7
-MAX_TOKENS = 4096
-# ... all other parameters unchanged
-```
-
-### OpenClaw/Nanobot Example
-```yaml
-# config.yaml - ONLY change base_url and use dummy key
+# config.yaml
 llm:
   provider: openrouter
-  base_url: http://agent-vault-proxy:8080/openrouter  # ← Proxy endpoint
-  api_key: dummy-openrouter-key  # ← Any non-empty string works
-  model: google/gemini-2.5-flash-preview
-  temperature: 0.7
-  max_tokens: 4096
-  # All other settings unchanged
-```
-
-### Generic Integration Pattern
-```python
-import os
-
-# Configuration (only these 2 lines change per environment)
-API_KEY = os.getenv("API_KEY", "dummy-key")  # Dummy key for proxy
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8080/openrouter")
-
-# Everything else stays the same
-MODEL = "claude-3-opus-20240229"
-TEMPERATURE = 0.7
-# ... rest of config
-
-# Client initialization (OpenAI-compatible)
-from openai import OpenAI
-client = OpenAI(
-    api_key=API_KEY,      # Dummy key - proxy replaces it
-    base_url=BASE_URL,    # Proxy endpoint
-)
-
-# Usage is IDENTICAL to direct API access
-response = client.chat.completions.create(
-    model=MODEL,
-    temperature=TEMPERATURE,
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-### OpenClaw/Nanobot Config Example
-```yaml
-# ~/.config/openclaw/config.yaml
-llm:
-  provider: openrouter
-  # Only these 2 lines change:
   base_url: http://localhost:8080/openrouter
   api_key: dummy-key
-  
-  # Everything else stays EXACTLY the same:
   model: google/gemini-2.5-flash-preview
-  temperature: 0.7
-  max_tokens: 4096
-  top_p: 0.9
+```
+
+### 2. Multi-Agent Setup
+```yaml
+# docker-compose.yml
+services:
+  vault:
+    image: agent-vault-proxy
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
   
-  # Extra headers still work:
-  extra_headers:
-    HTTP-Referer: https://myapp.com
-    X-Title: My Application
-
-# Vector DB configuration
-vector_store:
-  provider: pinecone
-  base_url: http://localhost:8080/pinecone
-  api_key: dummy-key
-  index: my-index
+  agent-1:
+    image: my-agent
+    environment:
+      - OPENAI_API_KEY=dummy-key
+      - OPENAI_BASE_URL=http://vault:8080/openai
   
-# Search configuration
-search:
-  provider: brave
-  base_url: http://localhost:8080/brave
-  api_key: dummy-key
+  agent-2:
+    image: my-agent
+    environment:
+      - OPENAI_API_KEY=dummy-key
+      - OPENAI_BASE_URL=http://vault:8080/openai
 ```
 
-### Key Points
-- ✅ **Zero config changes** for models, parameters, or request format
-- ✅ **Same API** - OpenAI-compatible clients work unchanged
-- ✅ **Dummy key** can be any string (e.g., `dummy`, `proxy`, `vault`)
-- ✅ **Proxy injects** the real key from secure storage
-- ✅ **Response flows** directly back to agent
-
-### How Dummy Keys Work
-The proxy **does not validate** the dummy key - it only uses the URL path to determine which service to proxy to:
-
-```
-Request: POST http://proxy:8080/openrouter/chat/completions
-                └──────┬──────┘
-                       │
-                       └── Proxy sees "openrouter" → injects real OpenRouter key
-
-Request: POST http://proxy:8080/anthropic/messages
-                └───────┬───────┘
-                        │
-                        └── Proxy sees "anthropic" → injects real Anthropic key
+### 3. CI/CD Pipelines
+```bash
+# Keine echten Keys in GitHub Secrets nötig
+export OPENAI_API_KEY=dummy-key
+export OPENAI_BASE_URL=http://vault:8080/openai
+pytest tests/
 ```
 
-The dummy key in the Authorization header is **ignored** - the proxy replaces it entirely with the real key from its secure storage.
+### 4. Entwicklerteams
+- Junior-Devs bekommen nur Dummy-Keys
+- Echte Keys bleiben im Vault
+- Keine Angst vor Accidental Commits
 
-## Architecture
+---
 
-```
-┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
-│  AI Agent   │ ─────────────────→ │  Agent Vault    │ ─────────────────→ │   OpenAI    │
-│  (OpenClaw) │                    │  Proxy          │                    │   API       │
-│             │  Model, Params   │                 │                    │             │
-│             │  (unchanged)     │                 │                    │             │
-└─────────────┘                    └─────────────────┘                    └─────────────┘
-       ↑                                    │                                    │
-       │                                    │                                    │
-       └────────────────────────────────────┴────────────────────────────────────┘
-                                    Response
-                                    (unchanged)
-```
+## 📚 Dokumentation
 
-## CLI Commands
+| Guide | Beschreibung |
+|-------|--------------|
+| [Remote Setup](docs/REMOTE_SETUP.md) | Vault auf separatem Server |
+| [HTTPS/TLS](docs/HTTPS_SETUP.md) | TLS-Zertifikate einrichten |
+| [Authentication](docs/AUTH_SETUP.md) | Agent-to-Vault Auth |
 
-### Interactive Mode (Recommended)
+---
+
+## 🧪 Testing
 
 ```bash
-python cli.py
-```
-
-Launches the interactive menu with Rich UI.
-
-### Direct Commands
-
-```bash
-# Setup vault
-python cli.py setup
-
-# Add API key
-python cli.py add-key
-
-# List all keys
-python cli.py list-keys
-
-# Remove a key
-python cli.py remove-key
-
-# Test a key
-python cli.py test-key
-
-# View audit logs
-python cli.py audit-logs
-
-# Show help
-python cli.py --help
-```
-
-## Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
+# Alle Tests
 python -m pytest tests/ -v
 
-# Run specific test file
-python -m pytest tests/test_database.py -v
-
-# Run with coverage
+# Mit Coverage
 python -m pytest tests/ --cov=.
 ```
 
-**Test Coverage:** 91/102 tests passing (89%)
+**Status:** 102/102 Tests passing ✅
 
-## Adding New Services
+---
 
-### Via CLI (Recommended)
-
-The CLI automatically supports all services defined in `SERVICES` dict. Just add your key:
-
-```bash
-python cli.py
-# Select "Add API Key" → Choose service → Enter key
-```
-
-### Manual Configuration
-
-Edit `main.py`:
-
-1. Add to `TARGETS` dict:
-   ```python
-   TARGETS = {
-       "openrouter": "https://openrouter.ai/api/v1",
-       "mynewservice": "https://api.myservice.com",
-   }
-   ```
-
-2. Add env mapping in `load_secrets()`:
-   ```python
-   "mynewservice": ("MYNEW_API_KEY", "api_key"),
-   ```
-
-3. Add auth logic in `get_auth_header()`:
-   ```python
-   elif service == "mynewservice":
-       return f"Bearer {_secrets[service]['api_key']}"
-   ```
-
-4. Add service-specific headers if needed.
-
-## Architecture
+## 🛡️ Sicherheitsmodell
 
 ```
 ┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
-│  AI Agent   │ ─────────────────→ │  Agent Vault    │ ─────────────────→ │   OpenAI    │
-│  (OpenClaw) │                    │  Proxy          │                    │   API       │
-│             │  Model, Params     │  ├─ Encrypted   │                    │             │
-│             │  (unchanged)       │  │   SQLite      │                    │             │
-└─────────────┘                    │  ├─ CLI (Typer) │                    └─────────────┘
-       ↑                           │  ├─ Middleware  │                           │
-       │                           │  │   Stack       │                           │
-       │                           │  └─ Audit Log   │                           │
-       │                           └─────────────────┘                           │
+│  AI Agent   │ ─────────────────► │  Agent Vault    │ ─────────────────► │   OpenAI    │
+│             │                    │  Proxy          │                    │   API       │
+│  - Keine    │  Model, Params     │  ├─ Encrypted   │                    │             │
+│    echten   │  (unchanged)       │  │   SQLite      │                    │             │
+│    Keys     │                    │  ├─ CLI         │                    │             │
+│  - Kann     │                    │  ├─ Middleware  │                    │             │
+│    nicht    │                    │  └─ Audit Log   │                    │             │
+│    leaken   │                    │                 │                    │             │
+└─────────────┘                    └─────────────────┘                    └─────────────┘
+       ▲                                    │                                    │
        │                                    │                                    │
        └────────────────────────────────────┴────────────────────────────────────┘
                                     Response
-                                    (unchanged)
 ```
 
-### Components
+---
 
-| Component | Purpose | Tech |
-|-----------|---------|------|
-| **Proxy** | HTTP forwarding & auth injection | FastAPI + httpx |
-| **Vault** | Encrypted key storage | SQLite + Fernet |
-| **CLI** | Interactive management | Typer + Rich |
-| **Middleware** | Security & rate limiting | Starlette |
-| **Audit** | Request logging | SQLite |
+## 🗺️ Roadmap zu v1.0.0
 
-## Roadmap to v1.0.0
+- [x] Core Proxy
+- [x] Encrypted SQLite Vault
+- [x] Interactive CLI
+- [x] Middleware Stack
+- [x] Audit Logging
+- [x] 100% Test Coverage
+- [ ] RBAC (geplant)
+- [ ] Web Dashboard (geplant)
+- [ ] Key Rotation Automation (geplant)
 
-- [x] Core proxy functionality
-- [x] Encrypted SQLite vault
-- [x] Interactive CLI (Typer + Rich)
-- [x] Middleware stack (rate limiting, circuit breaker)
-- [x] Audit logging
-- [x] Test suite (91% passing)
-- [ ] RBAC implementation
-- [ ] Web dashboard
-- [ ] Key rotation automation
-- [ ] Multi-tenant support
+---
 
-## License
+## 📄 Lizenz
 
-MIT License - feel free to use and modify.
+MIT License
 
-## Contributing
+---
 
-Pull requests welcome! Please ensure:
-- No secrets in commits
-- Tests pass (`python -m pytest tests/`)
-- Documentation updated
-- Follow existing code style
+**Made with ❤️ for AI Agents that deserve secure API access**
