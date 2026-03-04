@@ -72,7 +72,7 @@ def load_secrets_from_db() -> dict:
         cursor = conn.cursor()
         
         # Load keys
-        cursor.execute('SELECT service, key_value FROM api_keys')
+        cursor.execute('SELECT service_name, encrypted_key FROM api_keys')
         rows = cursor.fetchall()
         
         # Load metadata
@@ -91,9 +91,10 @@ def load_secrets_from_db() -> dict:
         
         conn.close()
         
-        for service, encrypted_key in rows:
+        for service_name, encrypted_key in rows:
             try:
                 decrypted = _decrypt_key(encrypted_key)
+                service = service_name  # Use consistent variable name
                 
                 # Determine key type based on service
                 if service == "github":
