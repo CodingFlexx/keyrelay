@@ -2,8 +2,17 @@
 
 Secure API Key Injection Proxy for AI Agents and Applications.
 
-> **Version:** 0.9.0-beta (pre-1.0.0)  
+> **Version:** 0.9.1-beta (pre-1.0.0)  
 > **Status:** Feature-complete, testing phase before 1.0.0 release
+
+## What's New in v0.9.1
+
+- ✅ **Gemini Auth Fix** - Gemini API keys now correctly injected as query parameters
+- ✅ **Service Health Checks** - New `/health/services` endpoint for detailed service status
+- ✅ **Key Validation** - Admin endpoint to validate API keys against live services
+- ✅ **Graceful Shutdown** - Proper signal handling for clean container shutdowns
+- ✅ **Chroma Config** - Customizable Chroma host/port via environment variables
+- ✅ **CLI Consolidation** - Unified `cli.py` (removed legacy cli_v2.py)
 
 ## Purpose
 

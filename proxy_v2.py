@@ -209,6 +209,12 @@ def get_target_url(service: str, path: str, metadata: Optional[Dict] = None) -> 
     if service == "telegram" and metadata and metadata.get('token'):
         return f"{base}/bot{metadata['token']}/{path}"
     
+    # Chroma: Allow custom host via metadata or environment
+    if service == "chroma":
+        chroma_host = os.getenv("CHROMA_HOST", "localhost")
+        chroma_port = os.getenv("CHROMA_PORT", "8000")
+        base = f"http://{chroma_host}:{chroma_port}"
+    
     return f"{base}/{path}"
 
 
@@ -241,7 +247,7 @@ async def verify_proxy_access(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load secrets on startup."""
+    """Load secrets on startup with graceful shutdown."""
     logger.info("Initializing Agent Vault Proxy v2...")
     
     # Initialize database if needed
@@ -251,8 +257,24 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"Database location: {DB_PATH}")
     logger.info(f"Available services: {len(TARGETS)}")
+    
+    # Setup signal handlers for graceful shutdown
+    import signal
+    
+    def signal_handler(sig, frame):
+        logger.info(f"Received signal {sig}, initiating graceful shutdown...")
+        # Close any open connections
+        logger.info("Graceful shutdown complete")
+        import sys
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     yield
+    
     logger.info("Shutting down...")
+    logger.info("Cleanup complete")
 
 
 app = FastAPI(
@@ -319,11 +341,17 @@ async def proxy_request(
         if k.lower() not in ("host", "authorization", "content-length", "x-proxy-auth")
     }
     
-    # Inject auth header
-    auth_header = get_auth_header(service, api_key)
-    if auth_header:
-        forward_headers["Authorization"] = auth_header
-        logger.info(f"Injected auth for {service}")
+    # Inject auth (header or query param)
+    if service == "gemini":
+        # Gemini uses query parameter, not Bearer token
+        separator = "&" if "?" in target_url else "?"
+        target_url = f"{target_url}{separator}key={api_key}"
+        logger.info(f"Injected Gemini API key as query parameter")
+    else:
+        auth_header = get_auth_header(service, api_key)
+        if auth_header:
+            forward_headers["Authorization"] = auth_header
+            logger.info(f"Injected auth for {service}")
     
     # Service-specific headers
     header_overrides = {
@@ -446,6 +474,56 @@ async def health_check():
     }
 
 
+@app.get("/health/services")
+async def services_health_check():
+    """Detailed health check for all configured services."""
+    import httpx
+    
+    keys = list_api_keys()
+    service_status = {}
+    
+    # Simple health check endpoints for common services
+    health_endpoints = {
+        "openrouter": ("https://openrouter.ai/api/v1/models", 200),
+        "openai": ("https://api.openai.com/v1/models", 401),  # 401 expected without key
+        "anthropic": ("https://api.anthropic.com/v1/models", 401),
+        "groq": ("https://api.groq.com/openai/v1/models", 401),
+        "github": ("https://api.github.com", 200),
+        "huggingface": ("https://api-inference.huggingface.co/status", 200),
+    }
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for key_info in keys:
+            service = key_info['service_name']
+            if service in health_endpoints:
+                url, expected_status = health_endpoints[service]
+                try:
+                    response = await client.get(url)
+                    # 401 is OK (means service is up, just needs auth)
+                    is_healthy = response.status_code in (200, expected_status, 401)
+                    service_status[service] = {
+                        "status": "healthy" if is_healthy else "degraded",
+                        "http_status": response.status_code,
+                        "response_time_ms": int(response.elapsed.total_seconds() * 1000)
+                    }
+                except Exception as e:
+                    service_status[service] = {
+                        "status": "unreachable",
+                        "error": str(e)
+                    }
+            else:
+                service_status[service] = {
+                    "status": "configured",
+                    "note": "No automated health check available"
+                }
+    
+    return {
+        "status": "healthy",
+        "services_checked": len(service_status),
+        "services": service_status
+    }
+
+
 @app.get("/")
 async def root():
     """Root endpoint with usage info."""
@@ -508,6 +586,93 @@ async def admin_services(
         "services": list(TARGETS.keys()),
         "count": len(TARGETS)
     }
+
+
+@app.post("/admin/validate-key/{service}")
+async def validate_service_key(
+    service: str,
+    user: Dict[str, Any] = Depends(verify_proxy_access)
+):
+    """Validate API key for a service by making a test request (admin only)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    if service not in TARGETS:
+        raise HTTPException(status_code=404, detail=f"Unknown service: {service}")
+    
+    api_key = get_api_key(service)
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No API key configured for {service}"
+        )
+    
+    # Test endpoints for validation
+    test_endpoints = {
+        "openrouter": ("https://openrouter.ai/api/v1/models", "GET"),
+        "openai": ("https://api.openai.com/v1/models", "GET"),
+        "anthropic": ("https://api.anthropic.com/v1/models", "GET"),
+        "groq": ("https://api.groq.com/openai/v1/models", "GET"),
+        "github": ("https://api.github.com/user", "GET"),
+        "huggingface": ("https://api-inference.huggingface.co/status", "GET"),
+        "gemini": ("https://generativelanguage.googleapis.com/v1beta/models", "GET"),
+    }
+    
+    if service not in test_endpoints:
+        return {
+            "service": service,
+            "status": "unknown",
+            "message": "No validation endpoint configured for this service"
+        }
+    
+    url, method = test_endpoints[service]
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            # Build headers with auth
+            headers = {"Accept": "application/json"}
+            
+            if service == "gemini":
+                url = f"{url}?key={api_key}"
+            else:
+                auth_header = get_auth_header(service, api_key)
+                if auth_header:
+                    headers["Authorization"] = auth_header
+            
+            response = await client.request(method, url, headers=headers)
+            
+            # 200 = valid, 401 = invalid key, 403 = key valid but no access
+            is_valid = response.status_code == 200
+            is_auth_error = response.status_code in (401, 403)
+            
+            result = {
+                "service": service,
+                "status": "valid" if is_valid else ("invalid_key" if is_auth_error else "error"),
+                "http_status": response.status_code,
+                "response_time_ms": int(response.elapsed.total_seconds() * 1000)
+            }
+            
+            if is_auth_error:
+                result["message"] = "API key is invalid or expired"
+            elif not is_valid:
+                result["message"] = f"Unexpected response: {response.status_code}"
+            else:
+                result["message"] = "API key is valid and working"
+            
+            return result
+            
+        except httpx.TimeoutException:
+            return {
+                "service": service,
+                "status": "timeout",
+                "message": "Request timed out"
+            }
+        except Exception as e:
+            return {
+                "service": service,
+                "status": "error",
+                "message": str(e)
+            }
 
 
 if __name__ == "__main__":

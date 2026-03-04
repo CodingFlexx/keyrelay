@@ -19,6 +19,9 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - GITHUB_PAT=${GITHUB_PAT:-}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      # Chroma configuration (customizable host/port)
+      - CHROMA_HOST=${CHROMA_HOST:-chroma}
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
       # Or specify secrets file location
       - SECRETS_FILE=/app/secrets.json
     restart: unless-stopped
