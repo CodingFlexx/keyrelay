@@ -44,10 +44,25 @@ def _get_cipher() -> Fernet:
     """Get or initialize cipher for decryption."""
     global _cipher
     if _cipher is None:
-        if not KEY_FILE.exists():
-            raise RuntimeError("Vault not initialized. Run: ./cli.py init")
-        with open(KEY_FILE, 'rb') as f:
-            key = base64.urlsafe_b64decode(f.read())
+        # Try environment variable first (like cli.py)
+        env_key = os.getenv("AGENT_VAULT_KEY")
+        if env_key:
+            # Ensure key is 32 bytes and base64 encoded
+            key_bytes = env_key.encode('utf-8')
+            if len(key_bytes) < 32:
+                key_bytes = key_bytes.ljust(32, b'\0')
+            elif len(key_bytes) > 32:
+                key_bytes = key_bytes[:32]
+            key = base64.urlsafe_b64encode(key_bytes)
+        elif KEY_FILE.exists():
+            # Fallback to key file
+            with open(KEY_FILE, 'rb') as f:
+                key = base64.urlsafe_b64decode(f.read())
+        else:
+            raise RuntimeError(
+                "Vault not initialized. Set AGENT_VAULT_KEY environment variable "
+                "or run: ./cli.py init"
+            )
         _cipher = Fernet(key)
     return _cipher
 
