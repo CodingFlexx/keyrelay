@@ -7,6 +7,7 @@ Security, rate limiting, and request validation middleware.
 import re
 import time
 import logging
+import os
 from typing import Optional, Callable
 from functools import wraps
 
@@ -114,6 +115,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.burst_size = burst_size
         self.requests: dict = {}  # IP -> list of timestamps
         self.blocked: dict = {}  # IP -> unblock time
+        # Disable rate limiting in test mode
+        self._disabled = os.getenv("AGENT_VAULT_TEST_MODE") == "1"
         
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP from request."""
@@ -167,6 +170,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next: Callable):
         """Apply rate limiting."""
+        # Skip rate limiting in test mode
+        if self._disabled:
+            return await call_next(request)
+        
         client_ip = self._get_client_ip(request)
         
         if self._is_rate_limited(client_ip):

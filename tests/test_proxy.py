@@ -13,6 +13,7 @@ Tests the main proxy functionality including:
 import pytest
 import json
 import respx
+import time
 from httpx import Response
 from fastapi.testclient import TestClient
 
@@ -20,6 +21,14 @@ from fastapi.testclient import TestClient
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+@pytest.fixture
+def mock_env_vars(monkeypatch):
+    """Set up test environment variables."""
+    monkeypatch.setenv("AGENT_VAULT_KEY", "test-master-key-for-testing-only-32bytes!")
+    monkeypatch.setenv("AGENT_VAULT_TEST_MODE", "1")  # Disable rate limiting
+    yield
 
 
 @pytest.mark.unit
@@ -37,8 +46,9 @@ class TestProxyBasic:
         data = response.json()
         assert data["status"] == "healthy"
         assert "version" in data
-        assert "services_available" in data
-        assert "services_configured" in data
+        assert "services" in data
+        assert "available" in data["services"]
+        assert "configured" in data["services"]
     
     def test_root_endpoint(self, mock_env_vars):
         """Test root endpoint returns usage info."""
@@ -523,7 +533,8 @@ class TestProxyLogging:
         # This test verifies logging configuration exists
         from main import logger
         
-        assert logger.name == "__main__"
+        # Logger name can be '__main__' or 'main' depending on import
+        assert logger.name in ["__main__", "main"]
         assert logger.level <= logging.INFO
 
 

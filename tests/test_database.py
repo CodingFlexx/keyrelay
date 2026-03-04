@@ -244,10 +244,10 @@ class TestAPIKeyOperations:
         keys = db.list_api_keys()
         assert len(keys) == 1
         
-        # Key should still be encrypted
+        # Key should still be encrypted in database
         conn = sqlite3.connect(temp_db)
         cursor = conn.cursor()
-        cursor.execute("SELECT key_value FROM api_keys WHERE service_name = ?", ("test_service",))
+        cursor.execute("SELECT encrypted_key FROM api_keys WHERE service_name = ?", ("test_service",))
         row = cursor.fetchone()
         conn.close()
         
