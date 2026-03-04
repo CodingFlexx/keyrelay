@@ -1,6 +1,7 @@
-# Agent Vault Proxy v0.9.1
+# KeyRelay v0.9.1
 
-**Secure API Key Management for AI Agents – Zero-Friction Integration**
+**Share your API keys securely with your agents.**  
+*A secure proxy that injects real API keys while agents use dummy keys – zero-friction integration for AI agents.*
 
 > **Version:** 0.9.1 (Production Ready)  
 > **Tests:** 102/102 passing (100%)  
@@ -8,9 +9,9 @@
 
 ---
 
-## 🎯 What is Agent Vault Proxy?
+## 🎯 What is KeyRelay?
 
-A **secure proxy** that sits between your AI agents and external APIs. Agents use **dummy keys**, the proxy injects the **real API keys** – without agents ever seeing real keys.
+A **secure proxy** that sits between your AI agents and external APIs. Agents use **dummy keys**, KeyRelay injects the **real API keys** – without agents ever seeing real keys.
 
 ### The Problem
 ```python
@@ -21,8 +22,8 @@ OPENAI_API_KEY = "sk-abc123..."  # Risk: Leak, Git commit, logs
 ### The Solution
 ```python
 # ✅ AFTER: Only dummy key needed
-OPENAI_API_KEY = "dummy-key"  # Proxy replaces with real key
-BASE_URL = "http://vault:8080/openai"
+OPENAI_API_KEY = "dummy-key"  # KeyRelay replaces with real key
+BASE_URL = "http://keyrelay:8080/openai"
 ```
 
 ---
@@ -35,9 +36,9 @@ BASE_URL = "http://vault:8080/openai"
 ┌─────────────────────────────────────────┐
 │  Host (Your VM/Server)                  │
 │  ┌─────────────┐    ┌─────────────────┐ │
-│  │  AI Agent   │───►│  Agent Vault    │ │
-│  │  (Root)     │    │  (Docker)       │ │
-│  │             │◄───│  Port 8080      │ │
+│  │  AI Agent   │───►│    KeyRelay     │ │
+│  │  (Root)     │    │    (Docker)     │ │
+│  │             │◄───│    Port 8080    │ │
 │  └─────────────┘    └─────────────────┘ │
 │       localhost:8080                    │
 └─────────────────────────────────────────┘
@@ -54,7 +55,7 @@ BASE_URL = "http://vault:8080/openai"
 - ✅ No network configuration
 
 **Security:**
-- Agent theoretically has root access to vault possible
+- Agent theoretically has root access to KeyRelay possible
 - Defense in depth: Encryption, audit logging, container isolation
 - For malicious agents: See Option 2
 
@@ -64,10 +65,11 @@ BASE_URL = "http://vault:8080/openai"
 
 ```
 ┌─────────────┐      Internet/VPN      ┌─────────────────┐
-│   Agent     │  ═══════════════════►  │   Vault Server  │
-│  (Local)    │    HTTPS + Auth Token  │  (Remote)       │
-│             │  ◄═══════════════════   │  Port 443       │
-└─────────────┘                        └─────────────────┘
+│   Agent     │  ═══════════════════►  │  KeyRelay       │
+│  (Local)    │    HTTPS + Auth Token  │  Server         │
+│             │  ◄═══════════════════   │  (Remote)       │
+└─────────────┘                        │  Port 443       │
+       │                             └─────────────────┘
        │                                      │
        │                                      │
        └─────────────── API Keys ─────────────┘
@@ -82,7 +84,7 @@ BASE_URL = "http://vault:8080/openai"
 **Benefits:**
 - ✅ Physical separation = Highest security
 - ✅ Centralized key management
-- ✅ Agents cannot compromise vault
+- ✅ Agents cannot compromise KeyRelay
 - ✅ Centralized audit logging
 
 **Setup:**
@@ -92,16 +94,16 @@ BASE_URL = "http://vault:8080/openai"
 
 ---
 
-## 💡 Why Use Agent Vault Proxy?
+## 💡 Why Use KeyRelay?
 
 | Problem | Solution |
 |---------|--------|
 | **API keys in Git** | Keys never in code |
-| **Keys in logs** | Proxy filters keys out |
+| **Keys in logs** | KeyRelay filters keys out |
 | **Rotation overhead** | Rotate centrally, agents untouched |
-| **Multi-key chaos** | One vault, 30+ services |
+| **Multi-key chaos** | One KeyRelay, 30+ services |
 | **No audit trails** | Every request logged |
-| **Agent compromise** | Keys stay secure in vault |
+| **Agent compromise** | Keys stay secure in KeyRelay |
 
 ### Zero-Friction Integration
 
@@ -113,7 +115,7 @@ client = OpenAI(api_key="sk-real-key...")
 # AFTER
 client = OpenAI(
     api_key="dummy-key",  # ← Change 1
-    base_url="http://vault:8080/openai"  # ← Change 2
+    base_url="http://keyrelay:8080/openai"  # ← Change 2
 )
 ```
 
@@ -130,8 +132,8 @@ client = OpenAI(
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/CodingFlexx/agent-vault-proxy.git
-cd agent-vault-proxy
+git clone https://github.com/CodingFlexx/keyrelay.git
+cd keyrelay
 ```
 
 ### 2. Configure
@@ -274,8 +276,8 @@ llm:
 ```yaml
 # docker-compose.yml
 services:
-  vault:
-    image: agent-vault-proxy
+  keyrelay:
+    image: keyrelay
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
   
@@ -283,26 +285,26 @@ services:
     image: my-agent
     environment:
       - OPENAI_API_KEY=dummy-key
-      - OPENAI_BASE_URL=http://vault:8080/openai
+      - OPENAI_BASE_URL=http://keyrelay:8080/openai
   
   agent-2:
     image: my-agent
     environment:
       - OPENAI_API_KEY=dummy-key
-      - OPENAI_BASE_URL=http://vault:8080/openai
+      - OPENAI_BASE_URL=http://keyrelay:8080/openai
 ```
 
 ### 3. CI/CD Pipelines
 ```bash
 # No real keys in GitHub Secrets needed
 export OPENAI_API_KEY=dummy-key
-export OPENAI_BASE_URL=http://vault:8080/openai
+export OPENAI_BASE_URL=http://keyrelay:8080/openai
 pytest tests/
 ```
 
 ### 4. Development Teams
 - Junior devs get only dummy keys
-- Real keys stay in vault
+- Real keys stay in KeyRelay
 - No fear of accidental commits
 
 ---
@@ -311,9 +313,9 @@ pytest tests/
 
 | Guide | Description |
 |-------|-------------|
-| [Remote Setup](docs/REMOTE_SETUP.md) | Vault on separate server |
+| [Remote Setup](docs/REMOTE_SETUP.md) | KeyRelay on separate server |
 | [HTTPS/TLS](docs/HTTPS_SETUP.md) | Setup TLS certificates |
-| [Authentication](docs/AUTH_SETUP.md) | Agent-to-Vault auth |
+| [Authentication](docs/AUTH_SETUP.md) | Agent-to-KeyRelay auth |
 
 ---
 
@@ -335,8 +337,8 @@ python -m pytest tests/ --cov=.
 
 ```
 ┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
-│  AI Agent   │ ─────────────────► │  Agent Vault    │ ─────────────────► │   OpenAI    │
-│             │                    │  Proxy          │                    │   API       │
+│  AI Agent   │ ─────────────────► │    KeyRelay     │ ─────────────────► │   OpenAI    │
+│             │                    │                 │                    │   API       │
 │  - No real  │  Model, Params     │  ├─ Encrypted   │                    │             │
 │    keys     │  (unchanged)       │  │   SQLite      │                    │             │
 │  - Cannot   │                    │  ├─ CLI         │                    │             │
