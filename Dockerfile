@@ -10,12 +10,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY middleware.py .
 COPY database.py .
-COPY proxy_v2.py .
 COPY cli.py .
 COPY secrets.json.example secrets.json.example
 
-# Create directory for secrets (mounted at runtime)
-RUN mkdir -p /app/secrets
+# Persistent data directory for vault.db
+RUN mkdir -p /app/data
+ENV AGENT_VAULT_APP_DIR=/app/data
 
 # Non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

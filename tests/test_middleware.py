@@ -6,6 +6,7 @@ Tests security, rate limiting, and logging middleware.
 
 import pytest
 import time
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import sys
@@ -14,10 +15,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture
-def mock_env_vars(monkeypatch):
+def mock_env_vars(monkeypatch, tmp_path):
     """Set up test environment variables."""
     monkeypatch.setenv("AGENT_VAULT_KEY", "test-master-key-for-testing-only-32bytes!")
     monkeypatch.setenv("AGENT_VAULT_TEST_MODE", "1")  # Disable rate limiting
+    monkeypatch.setenv("REQUIRE_AGENT_AUTH", "false")
+    monkeypatch.setenv("AGENT_VAULT_APP_DIR", str(tmp_path))
+    import importlib
+    import database
+
+    importlib.reload(database)
+    database.init_database()
     yield
 
 
@@ -95,34 +103,43 @@ class TestSecurityMiddleware:
 class TestRateLimitMiddleware:
     """Test rate limiting middleware."""
     
-    def test_rate_limit_enforced(self, mock_env_vars):
-        """Test that rate limiting is enforced."""
-        from main import app
-        
+    def _build_rate_limited_app(self):
+        """Build an app with active rate limit middleware for deterministic tests."""
+        from middleware import RateLimitMiddleware
+
+        app = FastAPI()
+        app.add_middleware(RateLimitMiddleware, requests_per_minute=5, burst_size=1)
+
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        return app
+
+    def test_rate_limit_enforced(self, mock_env_vars, monkeypatch):
+        """Test that rate limiting is actually enforced when active."""
+        monkeypatch.setenv("AGENT_VAULT_TEST_MODE", "0")
+        app = self._build_rate_limited_app()
         client = TestClient(app)
-        
-        # Make many requests quickly
-        responses = []
-        for _ in range(70):  # Above the 60/min limit
-            response = client.get("/health")
-            responses.append(response.status_code)
-        
-        # At least some should be rate limited (429) or all succeed
-        assert 429 in responses or all(r == 200 for r in responses[:60])
+
+        responses = [client.get("/health").status_code for _ in range(8)]
+        assert 429 in responses
     
-    def test_rate_limit_headers(self, mock_env_vars):
-        """Test that rate limit headers are present on blocked requests."""
-        from main import app
-        
+    def test_rate_limit_headers(self, mock_env_vars, monkeypatch):
+        """Test that blocked responses include Retry-After header."""
+        monkeypatch.setenv("AGENT_VAULT_TEST_MODE", "0")
+        app = self._build_rate_limited_app()
         client = TestClient(app)
-        
-        # Make many requests to trigger rate limit
-        for _ in range(100):
+
+        blocked_response = None
+        for _ in range(8):
             response = client.get("/health")
             if response.status_code == 429:
-                # Check for Retry-After header on rate limited response
-                assert 'Retry-After' in response.headers
+                blocked_response = response
                 break
+
+        assert blocked_response is not None
+        assert "Retry-After" in blocked_response.headers
 
 
 @pytest.mark.unit

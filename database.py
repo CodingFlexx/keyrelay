@@ -1,19 +1,20 @@
 """
-Agent Vault Database Module
+KeyRelay Database Module
 
 SQLite database with Fernet encryption for secure API key storage.
 """
 
+import base64
+import functools
+import json
 import os
 import sqlite3
-import base64
 import time
-import functools
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+import bcrypt
 from cryptography.fernet import Fernet
 
 
@@ -39,7 +40,9 @@ def retry_on_db_error(max_retries=3, delay=0.1):
     return decorator
 
 # Configuration
-APP_DIR = Path.home() / ".agent-vault"
+APP_DIR = Path(
+    os.getenv("AGENT_VAULT_APP_DIR", str(Path.home() / ".agent-vault"))
+).expanduser()
 DB_PATH = APP_DIR / "vault.db"
 
 # Encryption key from environment variable
@@ -86,6 +89,7 @@ def get_db_connection():
     """Context manager for database connections."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
     finally:
@@ -153,9 +157,19 @@ def init_database():
                 account_sid TEXT,
                 region TEXT,
                 base_url TEXT,
+                domain TEXT,
+                shop TEXT,
                 FOREIGN KEY (service_name) REFERENCES api_keys(service_name)
             )
         ''')
+
+        # Backward-compatible migrations for older vaults
+        cursor.execute("PRAGMA table_info(service_metadata)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        if "domain" not in existing_columns:
+            cursor.execute("ALTER TABLE service_metadata ADD COLUMN domain TEXT")
+        if "shop" not in existing_columns:
+            cursor.execute("ALTER TABLE service_metadata ADD COLUMN shop TEXT")
         
         # Create indexes for better performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)')
@@ -171,7 +185,7 @@ def init_database():
 # API Key Operations
 
 @retry_on_db_error(max_retries=3)
-def add_api_key(service_name: str, api_key: str, metadata: Optional[Dict] = None) -> bool:
+def add_api_key(service_name: str, api_key: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     """Add or update an API key."""
     try:
         encrypted = encrypt_value(api_key)
@@ -232,13 +246,69 @@ def list_api_keys() -> List[Dict[str, Any]]:
                 m.cloud_name,
                 m.account_sid,
                 m.region,
-                m.base_url
+                m.base_url,
+                m.domain,
+                m.shop
             FROM api_keys k
             LEFT JOIN service_metadata m ON k.service_name = m.service_name
             ORDER BY k.service_name
         ''')
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+def get_service_metadata(service_name: str) -> Dict[str, Any]:
+    """Get merged metadata for a service from both metadata stores."""
+    merged: Dict[str, Any] = {}
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                k.metadata,
+                m.cluster,
+                m.project,
+                m.resource,
+                m.cloud_name,
+                m.account_sid,
+                m.region,
+                m.base_url,
+                m.domain,
+                m.shop
+            FROM api_keys k
+            LEFT JOIN service_metadata m ON k.service_name = m.service_name
+            WHERE k.service_name = ?
+            LIMIT 1
+            """,
+            (service_name,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return merged
+
+        if row["metadata"]:
+            try:
+                parsed = json.loads(row["metadata"])
+                if isinstance(parsed, dict):
+                    merged.update(parsed)
+            except json.JSONDecodeError:
+                pass
+
+        for field in (
+            "cluster",
+            "project",
+            "resource",
+            "cloud_name",
+            "account_sid",
+            "region",
+            "base_url",
+            "domain",
+            "shop",
+        ):
+            value = row[field]
+            if value:
+                merged[field] = value
+    return merged
 
 
 def remove_api_key(service_name: str) -> bool:
@@ -248,8 +318,9 @@ def remove_api_key(service_name: str) -> bool:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM service_metadata WHERE service_name = ?', (service_name,))
             cursor.execute('DELETE FROM api_keys WHERE service_name = ?', (service_name,))
+            deleted_keys = cursor.rowcount
             conn.commit()
-            return cursor.rowcount > 0
+            return deleted_keys > 0
     except Exception as e:
         print(f"Error removing API key: {e}")
         return False
@@ -384,8 +455,24 @@ def get_audit_stats() -> Dict[str, Any]:
 
 def hash_password(password: str) -> str:
     """Hash a password for storage."""
-    import hashlib
-    return hashlib.pbkdf2_hmac('sha256', password.encode(), b'agent-vault', 100000).hex()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify password against bcrypt hash with legacy fallback support."""
+    # Legacy fallback for older PBKDF2 hashes to keep existing users working.
+    if not stored_hash.startswith("$2"):
+        import hashlib
+
+        legacy_hash = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), b"agent-vault", 100000
+        ).hex()
+        return legacy_hash == stored_hash
+
+    try:
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    except ValueError:
+        return False
 
 
 def hash_api_key(api_key: str) -> str:
@@ -421,19 +508,24 @@ def verify_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT username, role, is_active FROM users 
-            WHERE username = ? AND password_hash = ? AND is_active = 1
-        ''', (username, hash_password(password)))
+            SELECT username, role, is_active, password_hash FROM users 
+            WHERE username = ? AND is_active = 1
+        ''', (username,))
         row = cursor.fetchone()
-        
-        if row:
+
+        if row and verify_password(password, row["password_hash"]):
             # Update last access
-            cursor.execute('''
+            cursor.execute(
+                '''
                 UPDATE users SET last_access = CURRENT_TIMESTAMP 
                 WHERE username = ?
-            ''', (username,))
+            ''',
+                (username,),
+            )
             conn.commit()
-            return dict(row)
+            user = dict(row)
+            user.pop("password_hash", None)
+            return user
         return None
 
 
@@ -482,10 +574,6 @@ def delete_user(username: str) -> bool:
     except Exception as e:
         print(f"Error deleting user: {e}")
         return False
-
-
-# Import json for metadata handling
-import json
 
 
 if __name__ == "__main__":

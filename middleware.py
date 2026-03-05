@@ -1,5 +1,5 @@
 """
-Agent Vault Proxy Middleware
+KeyRelay Proxy Middleware
 
 Security, rate limiting, and request validation middleware.
 """

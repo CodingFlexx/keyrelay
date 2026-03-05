@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   agent-vault-proxy:
     build: .
@@ -7,23 +5,16 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount your local secrets.json into the container
-      - ./secrets.json:/app/secrets.json:ro
-      # Or use a Docker secret (more secure)
-      # - type: bind
-      #   source: ./secrets.json
-      #   target: /app/secrets.json
-      #   read_only: true
+      # Persist SQLite vault (keys/users/audit logs)
+      - ./data:/app/data
     environment:
-      # Alternative: Use environment variables
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - GITHUB_PAT=${GITHUB_PAT:-}
-      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      # Required encryption key for database secrets at rest
+      - AGENT_VAULT_KEY=${AGENT_VAULT_KEY}
+      - AGENT_VAULT_APP_DIR=/app/data
+      - REQUIRE_AGENT_AUTH=${REQUIRE_AGENT_AUTH:-true}
       # Chroma configuration (customizable host/port)
       - CHROMA_HOST=${CHROMA_HOST:-chroma}
       - CHROMA_PORT=${CHROMA_PORT:-8000}
-      # Or specify secrets file location
-      - SECRETS_FILE=/app/secrets.json
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]

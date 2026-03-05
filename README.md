@@ -1,376 +1,121 @@
-# KeyRelay v0.9.1
+# KeyRelay v2.0.0
 
-**Share your API keys securely with your agents.**  
-*A secure proxy that injects real API keys while agents use dummy keys – zero-friction integration for AI agents.*
+Sicherer API-Key-Proxy fuer Agenten und Tools.  
+KeyRelay injiziert echte API-Keys serverseitig, waehrend Clients nur mit Proxy-Endpunkten arbeiten.
 
-> **Version:** 0.9.1 (Production Ready)  
-> **Tests:** 102/102 passing (100%)  
-> **Status:** Feature-complete, ready for v1.0.0
+## Status
 
----
+- Version: `2.0.0`
+- Teststatus: `102/102` gruen
+- Architektur: einheitliche `main.py`, kein paralleler v1/v2-Stack mehr
 
-## 🎯 What is KeyRelay?
+## Was KeyRelay loest
 
-A **secure proxy** that sits between your AI agents and external APIs. Agents use **dummy keys**, KeyRelay injects the **real API keys** – without agents ever seeing real keys.
+- Keine echten Provider-Keys im Agent-Code
+- Zentrale Verwaltung, Rotation und Audit von API-Zugriffen
+- Einheitlicher Proxy fuer viele externe Services
+- RBAC fuer Proxy-Zugriff (`user`/`admin`)
 
-### The Problem
-```python
-# ❌ BEFORE: API keys in agent code
-OPENAI_API_KEY = "sk-abc123..."  # Risk: Leak, Git commit, logs
-```
+## Sicherheitsmodell
 
-### The Solution
-```python
-# ✅ AFTER: Only dummy key needed
-OPENAI_API_KEY = "dummy-key"  # KeyRelay replaces with real key
-BASE_URL = "http://keyrelay:8080/openai"
-```
+- Verschluesselter Vault in SQLite (Fernet)
+- Request-Audit-Logging in SQLite
+- Rate-Limiting, Security-Middleware und CORS
+- Optionaler Agent-Auth-Zwang per `REQUIRE_AGENT_AUTH`
 
----
+## Auth-Modi
 
-## 🏗️ Two Architecture Options
+### Produktion (Standard)
 
-### Option 1: Local (Same Machine)
+- `REQUIRE_AGENT_AUTH=true` (Default)
+- Jeder Proxy-Request braucht `Authorization: Bearer <proxy_user_api_key>`
+- API-Keys fuer Zielservices liegen im Vault
 
-```
-┌─────────────────────────────────────────┐
-│  Host (Your VM/Server)                  │
-│  ┌─────────────┐    ┌─────────────────┐ │
-│  │  AI Agent   │───►│    KeyRelay     │ │
-│  │  (Root)     │    │    (Docker)     │ │
-│  │             │◄───│    Port 8080    │ │
-│  └─────────────┘    └─────────────────┘ │
-│       localhost:8080                    │
-└─────────────────────────────────────────┘
-```
+### Lokale Entwicklung
 
-**When to use:**
-- Single agent on dedicated VM
-- Quick setup
-- Development/Testing
+- `REQUIRE_AGENT_AUTH=false`
+- Kein Proxy-User-Token fuer Requests erforderlich
+- Sinnvoll fuer lokale Tests und schnellen Start
 
-**Benefits:**
-- ✅ Simplest setup (docker-compose up)
-- ✅ Lowest latency
-- ✅ No network configuration
+## Quick Start (Docker)
 
-**Security:**
-- Agent theoretically has root access to KeyRelay possible
-- Defense in depth: Encryption, audit logging, container isolation
-- For malicious agents: See Option 2
+### 1) Repo klonen
 
----
-
-### Option 2: Remote (Network-separated)
-
-```
-┌─────────────┐      Internet/VPN      ┌─────────────────┐
-│   Agent     │  ═══════════════════►  │  KeyRelay       │
-│  (Local)    │    HTTPS + Auth Token  │  Server         │
-│             │  ◄═══════════════════   │  (Remote)       │
-└─────────────┘                        │  Port 443       │
-       │                             └─────────────────┘
-       │                                      │
-       │                                      │
-       └─────────────── API Keys ─────────────┘
-              (never visible to agent)
-```
-
-**When to use:**
-- Multiple agents centrally managed
-- Highest security requirements
-- Production with different agent teams
-
-**Benefits:**
-- ✅ Physical separation = Highest security
-- ✅ Centralized key management
-- ✅ Agents cannot compromise KeyRelay
-- ✅ Centralized audit logging
-
-**Setup:**
-- See [Remote Setup Guide](docs/REMOTE_SETUP.md)
-- TLS/HTTPS required
-- Bearer token auth
-
----
-
-## 💡 Why Use KeyRelay?
-
-| Problem | Solution |
-|---------|--------|
-| **API keys in Git** | Keys never in code |
-| **Keys in logs** | KeyRelay filters keys out |
-| **Rotation overhead** | Rotate centrally, agents untouched |
-| **Multi-key chaos** | One KeyRelay, 30+ services |
-| **No audit trails** | Every request logged |
-| **Agent compromise** | Keys stay secure in KeyRelay |
-
-### Zero-Friction Integration
-
-**What changes:** Only 2 lines
-```python
-# BEFORE
-client = OpenAI(api_key="sk-real-key...")
-
-# AFTER
-client = OpenAI(
-    api_key="dummy-key",  # ← Change 1
-    base_url="http://keyrelay:8080/openai"  # ← Change 2
-)
-```
-
-**What stays the same:** Everything else
-- Models
-- Parameters (temperature, max_tokens)
-- Request/Response format
-- Error handling
-- SDK/Client
-
----
-
-## 🚀 Quick Start
-
-### 1. Clone Repository
 ```bash
 git clone https://github.com/CodingFlexx/keyrelay.git
 cd keyrelay
 ```
 
-### 2. Configure
+### 2) Encryption Key setzen
 
-**Option A: CLI (Recommended)**
 ```bash
-python cli.py
-# → Select "Setup Vault"
-# → Add API keys
+export AGENT_VAULT_KEY="$(python3 - <<'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+)"
 ```
 
-**Option B: Environment Variables**
-```bash
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
+### 3) Container starten
 
-**Option C: secrets.json**
-```bash
-cp secrets.json.example secrets.json
-# Edit file
-```
-
-### 3. Start
 ```bash
 docker-compose up -d
 ```
 
-### 4. Test
-```bash
-curl http://localhost:8080/health
-```
-
----
-
-## 📊 Features
-
-### 🔐 Security
-- **Encrypted Vault** - SQLite with Fernet (AES-128-CBC + HMAC)
-- **Audit Logging** - Every request with timestamp
-- **Rate Limiting** - 60 req/min per IP
-- **Circuit Breaker** - Automatic failover
-- **Path Traversal Protection** - Blocks `../`, null bytes
-- **Request Size Limit** - 100MB max
-
-### 🛠️ Management
-- **Interactive CLI** - Typer + Rich UI
-- **30+ Services** - LLMs, Vector DBs, Search, Git, Cloud
-- **Health Checks** - `/health` and `/health/services`
-- **Zero Config** - Docker-ready
-
-### 🔌 Integration
-- **OpenAI-compatible** - Works with all OpenAI clients
-- **Drop-in Replacement** - Just change base_url
-- **Dummy Keys** - Any string works
-
----
-
-## 📡 Supported Services (30+)
-
-### LLM APIs
-| Endpoint | Service | Auth |
-|----------|---------|------|
-| `/openrouter/*` | OpenRouter (unified) | Bearer |
-| `/openai/*` | OpenAI | Bearer |
-| `/anthropic/*` | Anthropic (Claude) | Bearer |
-| `/gemini/*` | Google Gemini | Query Param |
-| `/groq/*` | Groq | Bearer |
-| `/cohere/*` | Cohere | Bearer |
-| `/mistral/*` | Mistral AI | Bearer |
-| `/deepseek/*` | DeepSeek | Bearer |
-| `/azure-openai/*` | Azure OpenAI | Bearer |
-| `/bedrock/*` | AWS Bedrock | AWS SigV4 |
-
-### Vector Databases
-| Endpoint | Service |
-|----------|---------|
-| `/pinecone/*` | Pinecone |
-| `/weaviate/*` | Weaviate |
-| `/qdrant/*` | Qdrant |
-| `/chroma/*` | Chroma |
-| `/milvus/*` | Milvus |
-
-### Search APIs
-| Endpoint | Service |
-|----------|---------|
-| `/brave/*` | Brave Search |
-| `/serpapi/*` | SerpAPI |
-| `/tavily/*` | Tavily |
-| `/exa/*` | Exa AI |
-| `/perplexity/*` | Perplexity |
-
-### Git & Dev
-| Endpoint | Service |
-|----------|---------|
-| `/github/*` | GitHub API |
-| `/gitlab/*` | GitLab API |
-| `/bitbucket/*` | Bitbucket |
-
-### Communication
-| Endpoint | Service |
-|----------|---------|
-| `/slack/*` | Slack |
-| `/discord/*` | Discord |
-| `/telegram/*` | Telegram |
-| `/twilio/*` | Twilio |
-| `/sendgrid/*` | SendGrid |
-
-### Monitoring
-| Endpoint | Service |
-|----------|---------|
-| `/langsmith/*` | LangSmith |
-| `/langfuse/*` | Langfuse |
-| `/wandb/*` | Weights & Biases |
-| `/arize/*` | Arize |
-
-### Image & Media
-| Endpoint | Service |
-|----------|---------|
-| `/replicate/*` | Replicate |
-| `/stability/*` | Stability AI |
-| `/cloudinary/*` | Cloudinary |
-| `/elevenlabs/*` | ElevenLabs |
-
----
-
-## 🏢 Use Cases
-
-### 1. OpenClaw/Nanobot Integration
-```yaml
-# config.yaml
-llm:
-  provider: openrouter
-  base_url: http://localhost:8080/openrouter
-  api_key: dummy-key
-  model: google/gemini-2.5-flash-preview
-```
-
-### 2. Multi-Agent Setup
-```yaml
-# docker-compose.yml
-services:
-  keyrelay:
-    image: keyrelay
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-  
-  agent-1:
-    image: my-agent
-    environment:
-      - OPENAI_API_KEY=dummy-key
-      - OPENAI_BASE_URL=http://keyrelay:8080/openai
-  
-  agent-2:
-    image: my-agent
-    environment:
-      - OPENAI_API_KEY=dummy-key
-      - OPENAI_BASE_URL=http://keyrelay:8080/openai
-```
-
-### 3. CI/CD Pipelines
-```bash
-# No real keys in GitHub Secrets needed
-export OPENAI_API_KEY=dummy-key
-export OPENAI_BASE_URL=http://keyrelay:8080/openai
-pytest tests/
-```
-
-### 4. Development Teams
-- Junior devs get only dummy keys
-- Real keys stay in KeyRelay
-- No fear of accidental commits
-
----
-
-## 📚 Documentation
-
-| Guide | Description |
-|-------|-------------|
-| [Remote Setup](docs/REMOTE_SETUP.md) | KeyRelay on separate server |
-| [HTTPS/TLS](docs/HTTPS_SETUP.md) | Setup TLS certificates |
-| [Authentication](docs/AUTH_SETUP.md) | Agent-to-KeyRelay auth |
-
----
-
-## 🧪 Testing
+### 4) Vault initialisieren und Schluessel hinterlegen
 
 ```bash
-# All tests
-python -m pytest tests/ -v
-
-# With coverage
-python -m pytest tests/ --cov=.
+python3 cli.py init
+python3 cli.py add-key --service openai
 ```
 
-**Status:** 102/102 Tests passing ✅
+### 5) Optional: Proxy-User anlegen (Production-Modus)
 
----
-
-## 🛡️ Security Model
-
-```
-┌─────────────┐     Dummy Key      ┌─────────────────┐     Real Key       ┌─────────────┐
-│  AI Agent   │ ─────────────────► │    KeyRelay     │ ─────────────────► │   OpenAI    │
-│             │                    │                 │                    │   API       │
-│  - No real  │  Model, Params     │  ├─ Encrypted   │                    │             │
-│    keys     │  (unchanged)       │  │   SQLite      │                    │             │
-│  - Cannot   │                    │  ├─ CLI         │                    │             │
-│    leak     │                    │  ├─ Middleware  │                    │             │
-│             │                    │  └─ Audit Log   │                    │             │
-└─────────────┘                    └─────────────────┘                    └─────────────┘
-       ▲                                    │                                    │
-       │                                    │                                    │
-       └────────────────────────────────────┴────────────────────────────────────┘
-                                    Response
+```bash
+python3 cli.py user-create my-agent --role user --password 'change-me'
 ```
 
----
+Die CLI zeigt den API-Key fuer den User einmalig an.
 
-## 🗺️ Roadmap to v1.0.0
+## Docker-Persistenz
 
-- [x] Core Proxy
-- [x] Encrypted SQLite Vault
-- [x] Interactive CLI
-- [x] Middleware Stack
-- [x] Audit Logging
-- [x] 100% Test Coverage
-- [ ] RBAC (planned)
-- [ ] Web Dashboard (planned)
-- [ ] Key Rotation Automation (planned)
+`docker-compose.yml` mountet `./data` nach `/app/data`.  
+Damit bleiben `vault.db`, User und Audit-Logs bei Neustarts erhalten.
 
----
+## Beispiel-Request
 
-## 📄 License
+```bash
+curl -X POST "http://localhost:8080/openai/chat/completions" \
+  -H "Authorization: Bearer <proxy-user-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role":"user","content":"Hi"}]
+  }'
+```
 
-MIT License
+Fuer lokale Entwicklung mit `REQUIRE_AGENT_AUTH=false` kann der Authorization-Header entfallen.
 
----
+## Health und Admin-Endpunkte
 
-**Made with ❤️ for AI Agents that deserve secure API access**
+- `GET /health`
+- `GET /health/services`
+- `GET /admin/audit-logs` (admin)
+- `GET /admin/audit-stats` (admin)
+- `GET /admin/services` (admin)
+
+## Tests
+
+```bash
+python3 -m pytest tests -q
+```
+
+## Dokumentation
+
+- [Remote Setup](docs/REMOTE_SETUP.md)
+- [HTTPS/TLS Setup](docs/HTTPS_SETUP.md)
+- [Authentication Setup](docs/AUTH_SETUP.md)
+
+## Lizenz
+
+MIT

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Agent Vault Proxy - Run Script
+# KeyRelay Proxy - Run Script
 # Starts the proxy server with proper configuration
 
 set -e
@@ -14,11 +14,14 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo -e "${BLUE}🔐 Agent Vault Proxy${NC}"
+echo -e "${BLUE}🔐 KeyRelay Proxy${NC}"
 echo "======================"
 
+# Resolve vault directory (supports Docker/custom path)
+APP_DIR="${AGENT_VAULT_APP_DIR:-$HOME/.agent-vault}"
+
 # Check if vault is initialized
-if [ ! -f "$HOME/.agent-vault/vault.db" ]; then
+if [ ! -f "$APP_DIR/vault.db" ]; then
     echo -e "${YELLOW}⚠️  Vault not initialized${NC}"
     echo "Run: ./cli.py init"
     exit 1
@@ -54,18 +57,18 @@ fi
 # Get port from environment or default
 PORT=${AGENT_VAULT_PORT:-8080}
 
-echo -e "${GREEN}🚀 Starting Agent Vault Proxy...${NC}"
+echo -e "${GREEN}🚀 Starting KeyRelay Proxy...${NC}"
 echo -e "   Host: ${HOST}"
 echo -e "   Port: ${PORT}"
 echo -e "   URL:  http://${HOST}:${PORT}"
 echo ""
 echo -e "${BLUE}📚 Quick commands:${NC}"
 echo "   ./cli.py status    - Check status"
-echo "   ./cli.py list      - List keys"
+echo "   ./cli.py list-keys - List keys"
 echo "   ./cli.py add-key   - Add a key"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop${NC}"
 echo "======================"
 
-# Run the server
-exec python3 main.py
+# Run the server with explicit host/port
+exec uvicorn main:app --host "$HOST" --port "$PORT"

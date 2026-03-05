@@ -1,133 +1,56 @@
-# Remote Setup Guide
+# Remote Setup (v2.0.0)
 
-Deploy Agent Vault Proxy on a separate server for centralized key management.
+## Zielbild
 
-## Architecture
+KeyRelay laeuft auf einem separaten Host, Agents verbinden sich nur per HTTPS.
 
-```
-┌─────────────┐     HTTPS/TLS      ┌─────────────────┐     ┌─────────────┐
-│   Agent     │ ═══════════════════► │  Vault Server   │ ──► │   OpenAI    │
-│  (Local)    │    Bearer Token      │  (Remote)       │     │   API       │
-│             │ ◄═══════════════════ │  Port 443       │     │             │
-└─────────────┘                      └─────────────────┘     └─────────────┘
-       │                                    │
-       │                                    │
-       └────────── VPN/Internet ────────────┘
+```text
+Agent -> HTTPS Reverse Proxy -> KeyRelay (Port 8080) -> Ziel-APIs
 ```
 
-## Server Setup (Remote)
-
-### 1. Install Docker & Docker Compose
+## 1) Server vorbereiten
 
 ```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install -y docker.io docker-compose
-
-# Or use official Docker repo for latest version
+git clone https://github.com/CodingFlexx/keyrelay.git
+cd keyrelay
+mkdir -p data
 ```
 
-### 2. Clone & Configure
+## 2) Pflicht-Variablen setzen
 
 ```bash
-git clone https://github.com/CodingFlexx/agent-vault-proxy.git
-cd agent-vault-proxy
-
-# Create environment file
-cp .env.example .env
-
-# Edit .env
-nano .env
+export AGENT_VAULT_KEY="<fernet-key>"
+export REQUIRE_AGENT_AUTH=true
 ```
 
-### 3. Environment Configuration
+`AGENT_VAULT_KEY` muss dauerhaft stabil sein, sonst koennen bestehende Keys nicht mehr entschluesselt werden.
 
-```env
-# Required
-AGENT_VAULT_KEY=your-32-byte-encryption-key-here!!
-
-# Optional
-VAULT_PORT=8080
-LOG_LEVEL=INFO
-MAX_REQUEST_SIZE=104857600
-
-# TLS (see HTTPS section below)
-TLS_CERT_PATH=/certs/cert.pem
-TLS_KEY_PATH=/certs/key.pem
-```
-
-### 4. Start Services
+## 3) Starten
 
 ```bash
-# Production mode
-docker-compose -f docker-compose.yml up -d
-
-# With TLS (recommended)
-docker-compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+docker-compose up -d
 ```
 
-## Agent Configuration (Local)
-
-### Option 1: Environment Variables
+## 4) Vault initialisieren und konfigurieren
 
 ```bash
-export AGENT_VAULT_URL=https://vault.yourdomain.com
-export AGENT_VAULT_TOKEN=your-agent-auth-token
+python3 cli.py init
+python3 cli.py add-key --service openai
+python3 cli.py user-create remote-agent --role user --password 'change-me'
 ```
 
-### Option 2: Config File
+## 5) Agent anbinden
 
-Create `~/.agent-vault/config.json`:
-
-```json
-{
-  "vault_url": "https://vault.yourdomain.com",
-  "vault_token": "your-agent-auth-token",
-  "verify_ssl": true
-}
-```
-
-### Option 3: OpenClaw Integration
-
-In your OpenClaw `.env`:
-
-```env
-OPENAI_API_KEY=dummy-key-replaced-by-vault
-OPENAI_BASE_URL=https://vault.yourdomain.com/openai
-```
-
-## Security Checklist
-
-- [ ] HTTPS/TLS enabled
-- [ ] Firewall: Only port 443 open
-- [ ] VPN or private network preferred
-- [ ] Strong AGENT_VAULT_KEY (32+ bytes)
-- [ ] Agent authentication tokens configured
-- [ ] Rate limiting enabled
-- [ ] Audit logging enabled
-- [ ] Regular backups of SQLite vault
-
-## Troubleshooting
-
-### Connection Refused
 ```bash
-# Check if vault is running
-curl https://vault.yourdomain.com/health
-
-# Check firewall
-sudo ufw status
+curl -X POST "https://vault.example.com/openai/chat/completions" \
+  -H "Authorization: Bearer <proxy-user-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-### TLS Errors
-```bash
-# Test with curl
-curl -v https://vault.yourdomain.com/health
+## Betriebshinweise
 
-# Check certificate
-openssl s_client -connect vault.yourdomain.com:443
-```
-
-## Next Steps
-
-See [HTTPS_SETUP.md](HTTPS_SETUP.md) for TLS configuration.
-See [AUTH_SETUP.md](AUTH_SETUP.md) for agent authentication.
+- Datenpersistenz liegt unter `./data` (gemountet nach `/app/data`).
+- Admin-Audits ueber `/admin/audit-logs` und `/admin/audit-stats`.
+- TLS ueber Reverse Proxy, siehe [HTTPS_SETUP.md](HTTPS_SETUP.md).
+- Auth-Details siehe [AUTH_SETUP.md](AUTH_SETUP.md).

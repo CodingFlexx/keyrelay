@@ -24,10 +24,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture
-def mock_env_vars(monkeypatch):
+def mock_env_vars(monkeypatch, tmp_path):
     """Set up test environment variables."""
     monkeypatch.setenv("AGENT_VAULT_KEY", "test-master-key-for-testing-only-32bytes!")
     monkeypatch.setenv("AGENT_VAULT_TEST_MODE", "1")  # Disable rate limiting
+    monkeypatch.setenv("REQUIRE_AGENT_AUTH", "false")
+    monkeypatch.setenv("AGENT_VAULT_APP_DIR", str(tmp_path))
+    import importlib
+    import database
+
+    importlib.reload(database)
+    database.init_database()
+    database.add_api_key("openrouter", "test-openrouter-key")
+    database.add_api_key("openai", "test-openai-key")
+    database.add_api_key("github", "test-github-pat")
+    database.add_api_key("anthropic", "test-anthropic-key")
+    database.add_api_key("gemini", "gemini-key")
+    database.add_api_key("stability", "test-stability-key")
+    database.add_api_key("telegram", "bot123:token")
     yield
 
 
@@ -46,9 +60,8 @@ class TestProxyBasic:
         data = response.json()
         assert data["status"] == "healthy"
         assert "version" in data
-        assert "services" in data
-        assert "available" in data["services"]
-        assert "configured" in data["services"]
+        assert "services_available" in data
+        assert "services_configured" in data
     
     def test_root_endpoint(self, mock_env_vars):
         """Test root endpoint returns usage info."""
@@ -59,9 +72,9 @@ class TestProxyBasic:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == "Agent Vault Proxy"
-        assert "services" in data
-        assert "usage" in data
+        assert data["name"] == "KeyRelay Proxy"
+        assert "endpoints" in data
+        assert "cli" in data
     
     def test_unknown_service(self, mock_env_vars):
         """Test proxy returns 404 for unknown service."""
@@ -82,13 +95,6 @@ class TestProxyForwarding:
     def test_openrouter_forwarding(self, mock_env_vars, sample_request_data, sample_response_data):
         """Test forwarding request to OpenRouter."""
         from main import app
-        import main
-        
-        # Set up mock secrets for openrouter
-        main._secrets = {
-            "openrouter": {"api_key": "test-openrouter-key"},
-        }
-        
         # Mock OpenRouter API
         route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
             return_value=Response(200, json=sample_response_data)
@@ -274,61 +280,40 @@ class TestProxyAuthInjection:
     def test_bearer_token_injection(self, mock_env_vars):
         """Test Bearer token injection for services."""
         from main import get_auth_header
-        
-        # Mock secrets
-        import main
-        main._secrets = {
-            "openrouter": {"api_key": "test-key"},
-            "openai": {"api_key": "test-key"},
-        }
-        
-        auth = get_auth_header("openrouter")
+
+        auth = get_auth_header("openrouter", "test-key")
         assert auth.startswith("Bearer ")
         
-        auth = get_auth_header("openai")
+        auth = get_auth_header("openai", "test-key")
         assert auth.startswith("Bearer ")
     
     def test_github_token_injection(self, mock_env_vars):
         """Test GitHub token format."""
         from main import get_auth_header
-        
-        import main
-        main._secrets = {"github": {"pat": "test-pat"}}
-        
-        auth = get_auth_header("github")
+
+        auth = get_auth_header("github", "test-pat")
         assert auth.startswith("token ")
     
     def test_telegram_url_injection(self, mock_env_vars):
         """Test Telegram token in URL."""
         from main import get_auth_header
-        
-        import main
-        main._secrets = {"telegram": {"token": "bot123:token"}}
-        
-        auth = get_auth_header("telegram")
+
+        auth = get_auth_header("telegram", "bot123:token")
         assert auth is None  # Telegram uses token in URL
     
     def test_twilio_basic_auth(self, mock_env_vars):
         """Test Twilio Basic auth format."""
         from main import get_auth_header
-        
-        import main
-        main._secrets = {
-            "twilio": {"token": "auth_token", "account_sid": "AC123"}
-        }
-        
-        auth = get_auth_header("twilio")
+
+        auth = get_auth_header("twilio", "auth_token", {"account_sid": "AC123"})
         assert auth.startswith("Basic ")
     
-    def test_no_secrets_returns_none(self, mock_env_vars):
-        """Test that missing secrets return None."""
+    def test_unknown_service_defaults_to_bearer(self, mock_env_vars):
+        """Test that unknown service uses Bearer auth by default."""
         from main import get_auth_header
-        
-        import main
-        main._secrets = {}
-        
-        auth = get_auth_header("openrouter")
-        assert auth is None
+
+        auth = get_auth_header("custom_service", "custom-key")
+        assert auth == "Bearer custom-key"
 
 
 @pytest.mark.unit
@@ -455,11 +440,7 @@ class TestProxyHeaders:
         """Test GitHub-specific headers are added."""
         from main import app
         
-        import main
-        main._secrets = {"github": {"pat": "test"}}
-        
-        # Headers are added in proxy_request
-        # This is tested in integration tests
+        # Headers are added in proxy_request and asserted in integration tests
         pass
 
 
@@ -471,9 +452,6 @@ class TestProxyServiceSpecific:
     def test_gemini_query_param_auth(self, mock_env_vars):
         """Test Gemini API key in query params."""
         from main import app
-        
-        import main
-        main._secrets = {"gemini": {"api_key": "gemini-key"}}
         
         route = respx.get("https://generativelanguage.googleapis.com/v1beta/models").mock(
             return_value=Response(200, json={"models": []})
@@ -622,7 +600,7 @@ class TestProxyConfiguration:
         """Test FastAPI app metadata."""
         from main import app
         
-        assert app.title == "Agent Vault Proxy"
+        assert app.title == "KeyRelay Proxy"
         assert "Secure API Key" in app.description
 
 

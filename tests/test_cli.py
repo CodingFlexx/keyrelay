@@ -1,19 +1,9 @@
-"""
-Tests for Agent Vault CLI.
+"""Tests for KeyRelay CLI usability and onboarding helpers."""
 
-Tests CLI functionality including:
-- Vault initialization
-- Key management
-- Service configuration
-- Audit logging
-"""
+from pathlib import Path
 
 import pytest
-import os
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
+from click.testing import CliRunner
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -23,15 +13,6 @@ def mock_env_vars(monkeypatch):
     """Set up test environment variables."""
     monkeypatch.setenv("AGENT_VAULT_KEY", "test-master-key-for-testing-only-32bytes!")
     yield
-
-
-@pytest.fixture
-def temp_vault_dir():
-    """Create a temporary vault directory."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vault_dir = Path(tmpdir) / ".agent-vault"
-        vault_dir.mkdir()
-        yield vault_dir
 
 
 @pytest.mark.unit
@@ -76,10 +57,12 @@ class TestCLIHelpers:
     """Test CLI helper functions."""
     
     def test_get_encryption_key_from_env(self, mock_env_vars):
-        """Test getting encryption key from environment."""
+        """Test getting encryption key from shared database helper."""
         import cli
+        import database
         
-        # Key should be derivable from env
+        # CLI should expose the same implementation as database.py
+        assert cli.get_encryption_key is database.get_encryption_key
         key = cli.get_encryption_key()
         assert isinstance(key, bytes)
         # Fernet keys are 32 bytes, base64 encoded to 44 chars
@@ -95,6 +78,33 @@ class TestCLIHelpers:
         
         assert encrypted != original
         assert decrypted == original
+
+    def test_infer_service_from_env_var(self, mock_env_vars):
+        import cli
+
+        assert cli._infer_service_from_env_var("OPENAI_API_KEY") == "openai"
+        assert cli._infer_service_from_env_var("CUSTOM_PROVIDER_TOKEN") == "custom_provider"
+
+    def test_parse_env_file(self, mock_env_vars, tmp_path):
+        import cli
+
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "# comment\nOPENAI_API_KEY=sk-123\n\nCUSTOM_TOKEN='abc-123'\n",
+            encoding="utf-8",
+        )
+        parsed = cli._parse_env_file(env_file)
+        assert parsed["OPENAI_API_KEY"] == "sk-123"
+        assert parsed["CUSTOM_TOKEN"] == "abc-123"
+
+    def test_run_doctor_checks_without_key_fails(self, monkeypatch, mock_env_vars, tmp_path):
+        import cli
+
+        monkeypatch.delenv("AGENT_VAULT_KEY", raising=False)
+        monkeypatch.setattr(cli, "DB_PATH", tmp_path / "missing.db")
+        checks, ok = cli.run_doctor_checks()
+        assert ok is False
+        assert any(item["name"] == "AGENT_VAULT_KEY" and item["status"] == "fail" for item in checks)
 
 
 @pytest.mark.unit
@@ -118,6 +128,90 @@ class TestCLIConfiguration:
         assert isinstance(cli.VERSION, str)
         # Should contain version number
         assert "." in cli.VERSION
+
+    def test_new_commands_registered(self, mock_env_vars):
+        import cli
+
+        command_names = set(cli.cli.commands.keys())
+        for required in {"setup", "doctor", "import-keys", "start", "help"}:
+            assert required in command_names
+
+
+@pytest.mark.unit
+class TestCLICommands:
+    def test_status_does_not_leak_env_key(self, mock_env_vars, monkeypatch, tmp_path):
+        import cli
+
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        db_path = app_dir / "vault.db"
+        db_path.write_text("db", encoding="utf-8")
+
+        monkeypatch.setattr(cli, "APP_DIR", app_dir)
+        monkeypatch.setattr(cli, "DB_PATH", db_path)
+        monkeypatch.setattr(cli, "list_api_keys", lambda: [])
+        monkeypatch.setattr(cli, "list_users", lambda: [])
+        monkeypatch.setattr(cli, "get_audit_stats", lambda: {"total_requests": 0})
+
+        runner = CliRunner()
+        result = runner.invoke(cli.cli, ["status"])
+        assert result.exit_code == 0
+        assert "Set (" in result.output
+        assert "test-master-key-for-t" not in result.output
+
+    def test_help_alias_prints_overview(self, mock_env_vars):
+        import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli.cli, ["help"])
+        assert result.exit_code == 0
+        assert "KeyRelay CLI command overview" in result.output
+        assert "python3 cli.py setup" in result.output
+
+    def test_import_keys_from_env(self, mock_env_vars, monkeypatch, tmp_path):
+        import cli
+
+        db_path = tmp_path / "vault.db"
+        db_path.write_text("stub", encoding="utf-8")
+        monkeypatch.setattr(cli, "DB_PATH", db_path)
+        monkeypatch.setattr(cli, "get_api_key", lambda _service: None)
+        monkeypatch.setattr(cli, "add_api_key", lambda _service, _key, _metadata=None: True)
+        monkeypatch.setattr(cli, "set_service_metadata", lambda *_args, **_kwargs: True)
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("OPENAI_API_KEY=sk-test\n", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(cli.cli, ["import-keys", "--from-env", str(env_file)], input="y\n")
+        assert result.exit_code == 0
+        assert "Import abgeschlossen" in result.output
+
+    def test_user_create_with_auto_password(self, mock_env_vars, monkeypatch, tmp_path):
+        import cli
+
+        db_path = tmp_path / "vault.db"
+        db_path.write_text("stub", encoding="utf-8")
+        monkeypatch.setattr(cli, "DB_PATH", db_path)
+        monkeypatch.setattr(cli, "create_user", lambda _username, _password, _role="user": "proxy_key_123")
+
+        runner = CliRunner()
+        result = runner.invoke(cli.cli, ["user-create", "tester", "--role", "admin", "--auto-password"])
+        assert result.exit_code == 0
+        assert "User created successfully" in result.output
+        assert "proxy_key_123" in result.output
+
+    def test_doctor_command_renders(self, mock_env_vars, monkeypatch):
+        import cli
+
+        monkeypatch.setattr(
+            cli,
+            "run_doctor_checks",
+            lambda: ([{"name": "X", "status": "pass", "detail": "ok"}], True),
+        )
+        runner = CliRunner()
+        result = runner.invoke(cli.cli, ["doctor"])
+        assert result.exit_code == 0
+        assert "Doctor Report" in result.output
 
 
 if __name__ == "__main__":

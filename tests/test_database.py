@@ -476,8 +476,14 @@ class TestRBAC:
         hash1 = db.hash_password("password123")
         hash2 = db.hash_password("password123")
         
-        # Same password should produce same hash
-        assert hash1 == hash2
+        # bcrypt should include random salt, so hashes differ
+        assert hash1 != hash2
+        assert hash1.startswith("$2")
+        assert hash2.startswith("$2")
+
+        # Both hashes must validate the same original password
+        assert db.verify_password("password123", hash1)
+        assert db.verify_password("password123", hash2)
         
         # Different passwords should produce different hashes
         hash3 = db.hash_password("different")
