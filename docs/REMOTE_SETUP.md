@@ -1,4 +1,4 @@
-# Remote Setup (v2.0.0)
+# Remote Setup (v0.9.0)
 
 ## Zielbild
 

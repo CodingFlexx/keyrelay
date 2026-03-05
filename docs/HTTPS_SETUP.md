@@ -1,4 +1,4 @@
-# HTTPS/TLS Setup (v2.0.0)
+# HTTPS/TLS Setup (v0.9.0)
 
 KeyRelay selbst terminiert standardmaessig kein TLS.  
 Empfohlen ist ein Reverse Proxy (z. B. Nginx, Caddy, Traefik) vor KeyRelay.

@@ -1,13 +1,13 @@
-# KeyRelay v2.0.0
+# KeyRelay v0.9.0
 
 Sicherer API-Key-Proxy fuer Agenten und Tools.  
 KeyRelay injiziert echte API-Keys serverseitig, waehrend Clients nur mit Proxy-Endpunkten arbeiten.
 
 ## Status
 
-- Version: `2.0.0`
+- Version: `0.9.0`
 - Teststatus: `102/102` gruen
-- Architektur: einheitliche `main.py`, kein paralleler v1/v2-Stack mehr
+- Architektur: einheitliche `main.py`, kein paralleler Legacy-Stack mehr
 
 ## Was KeyRelay loest
 

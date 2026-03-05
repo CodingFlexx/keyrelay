@@ -1,5 +1,5 @@
 """
-KeyRelay Proxy v2 - with audit logging, RBAC and middleware hardening.
+KeyRelay Proxy v0.9 - with audit logging, RBAC and middleware hardening.
 """
 
 import base64
@@ -233,7 +233,7 @@ async def verify_proxy_access(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing KeyRelay v2.0.0...")
+    logger.info("Initializing KeyRelay v0.9.0...")
     if not DB_PATH.exists():
         logger.info("Database not found, initializing...")
         init_database()
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="KeyRelay Proxy",
     description="Secure API Key Injection Proxy with Audit Logging and RBAC",
-    version="2.0.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -442,7 +442,7 @@ async def health_check():
     keys = list_api_keys()
     return {
         "status": "healthy",
-        "version": "2.0.0",
+        "version": "0.9.0",
         "services_available": len(TARGETS),
         "services_configured": len(keys),
         "configured_services": [k["service_name"] for k in keys],
@@ -490,7 +490,7 @@ async def services_health_check():
 async def root():
     return {
         "name": "KeyRelay Proxy",
-        "version": "2.0.0",
+        "version": "0.9.0",
         "description": "Secure API Key Injection Proxy with Audit Logging and RBAC",
         "endpoints": {
             "proxy": "/{service}/{path} - Proxy requests with auth injection",

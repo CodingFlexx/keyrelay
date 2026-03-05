@@ -1,4 +1,4 @@
-# Authentication Setup (v2.0.0)
+# Authentication Setup (v0.9.0)
 
 ## Uebersicht
 

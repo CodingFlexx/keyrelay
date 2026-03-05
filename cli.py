@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KeyRelay CLI v2 - Enhanced key management and onboarding.
+KeyRelay CLI v0.9 - Enhanced key management and onboarding.
 """
 
 import json
@@ -31,7 +31,7 @@ from cryptography.fernet import Fernet
 console = Console()
 
 # Version constant
-VERSION = "2.0.0"
+VERSION = "0.9.0"
 
 # App directory configuration
 APP_DIR = Path(
@@ -152,7 +152,7 @@ def print_banner():
     banner = """
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║   🔐  [bold cyan]KEYRELAY v2.0[/bold cyan] - Secure API Key Relay            ║
+║   🔐  [bold cyan]KEYRELAY v0.9[/bold cyan] - Secure API Key Relay            ║
 ║                                                          ║
 ║   Guided setup, encrypted vault, audit logging, RBAC     ║
 ║                                                          ║
@@ -454,7 +454,7 @@ def _start_server(host: str, port: int) -> None:
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version="2.0.0", prog_name="keyrelay")
+@click.version_option(version="0.9.0", prog_name="keyrelay")
 @click.pass_context
 def cli(ctx):
     """KeyRelay CLI - Secure API key management and guided onboarding."""
