@@ -31,7 +31,7 @@ from cryptography.fernet import Fernet
 console = Console()
 
 # Version constant
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 
 # App directory configuration
 APP_DIR = Path(
@@ -378,6 +378,31 @@ def run_doctor_checks() -> Tuple[List[Dict[str, str]], bool]:
             checks.append({"name": f"Dependency '{dependency}'", "status": "fail", "detail": "Nicht installiert"})
             success = False
 
+    try:
+        hidepid_path = Path("/proc/self/environ")
+        if hidepid_path.exists():
+            import stat
+            proc_mount_info = Path("/proc/mounts").read_text(encoding="utf-8", errors="ignore")
+            if "hidepid=" in proc_mount_info:
+                checks.append({"name": "proc hidepid", "status": "pass", "detail": "/proc mit hidepid gemountet"})
+            else:
+                checks.append({
+                    "name": "proc hidepid",
+                    "status": "warn",
+                    "detail": "/proc ohne hidepid - andere Prozesse koennen Env-Vars lesen. "
+                              "Empfehlung: mount -o remount,hidepid=2 /proc"
+                })
+    except Exception:
+        pass
+
+    cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if cors_origins and "*" in cors_origins:
+        checks.append({"name": "CORS Origins", "status": "warn", "detail": "Wildcard '*' in CORS_ALLOWED_ORIGINS ist unsicher"})
+    elif cors_origins:
+        checks.append({"name": "CORS Origins", "status": "pass", "detail": f"{len(cors_origins.split(','))} Origins konfiguriert"})
+    else:
+        checks.append({"name": "CORS Origins", "status": "pass", "detail": "Standard (localhost)"})
+
     return checks, success
 
 
@@ -454,7 +479,7 @@ def _start_server(host: str, port: int) -> None:
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version="0.9.0", prog_name="keyrelay")
+@click.version_option(version="0.9.1", prog_name="keyrelay")
 @click.pass_context
 def cli(ctx):
     """KeyRelay CLI - Secure API key management and guided onboarding."""
@@ -1000,14 +1025,15 @@ def user_verify(api_key):
 
 # Utility Commands
 
-@cli.command(name="export-env", epilog="Beispiel:\n  python3 cli.py export-env")
-def export_env():
-    """📤 Export keys to environment variable format"""
+@cli.command(name="export-env", epilog="Beispiel:\n  python3 cli.py export-env\n  python3 cli.py export-env --reveal")
+@click.option("--reveal", is_flag=True, help="Show full key values (default: masked)")
+def export_env(reveal):
+    """Export keys as environment variable mappings (masked by default)."""
     
     keys = list_api_keys()
     
     if not keys:
-        console.print("[yellow]📭 No keys to export[/yellow]")
+        console.print("[yellow]No keys to export[/yellow]")
         return
     
     env_mappings = {
@@ -1030,18 +1056,24 @@ def export_env():
         "sendgrid": "SENDGRID_API_KEY",
     }
     
-    console.print("\n[bold]📤 Environment Variables Export[/bold]\n")
-    console.print("[dim]# Copy these to your .env file:[/dim]\n")
+    if reveal:
+        console.print("[bold yellow]WARNUNG:[/bold yellow] Keys werden im Klartext angezeigt.")
+        if not Confirm.ask("Fortfahren?", default=False):
+            return
+    
+    console.print("\n[bold]Environment Variables Export[/bold]\n")
     
     for key_data in keys:
         service = key_data['service_name']
         api_key = get_api_key(service)
         if api_key:
             env_var = env_mappings.get(service, f"{service.upper()}_API_KEY")
-            masked = api_key[:4] + "*" * (len(api_key) - 8) + api_key[-4:] if len(api_key) > 8 else "****"
-            console.print(f"[green]{env_var}[/green]=[dim]{masked}[/dim]")
+            if reveal:
+                console.print(f"[green]{env_var}[/green]={api_key}")
+            else:
+                console.print(f"[green]{env_var}[/green]=[dim]{_mask_value(api_key)}[/dim]")
     
-    console.print("\n[dim]# End of export[/dim]\n")
+    console.print()
 
 
 @cli.command(name="status", epilog="Beispiel:\n  python3 cli.py status")
@@ -1097,8 +1129,16 @@ def status():
 
 @cli.command(name="get-key", epilog="Beispiel:\n  python3 cli.py get-key openai")
 @click.argument("service")
-def get_key(service):
-    """🔑 Retrieve a specific API key (decrypted)"""
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def get_key(service, yes):
+    """Retrieve a specific API key (decrypted). Requires confirmation."""
+    
+    if not yes:
+        console.print("[bold yellow]WARNUNG:[/bold yellow] Dieser Befehl zeigt den entschluesselten API-Key im Terminal.")
+        console.print("[dim]Sicherstellen, dass kein Bildschirmrecording/Logging aktiv ist.[/dim]")
+        if not Confirm.ask("Key wirklich anzeigen?", default=False):
+            console.print("[dim]Abgebrochen.[/dim]")
+            return
     
     key = get_api_key(service)
     
@@ -1109,7 +1149,6 @@ def get_key(service):
         console.print(f"\n[bold]{icon} {name} API Key:[/bold]")
         console.print(Panel(key, border_style="green"))
         
-        # Log this sensitive access
         log_request(
             service="cli",
             endpoint="/get-key",
@@ -1119,7 +1158,7 @@ def get_key(service):
             response_status=200
         )
     else:
-        console.print(f"[red]❌ No key found for {service}[/red]")
+        console.print(f"[red]No key found for {service}[/red]")
         console.print(f"[dim]Tipp:[/dim] [cyan]python3 cli.py add-key --service {service}[/cyan]")
 
 

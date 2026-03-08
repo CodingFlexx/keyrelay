@@ -499,6 +499,19 @@ class TestRBAC:
 
 
 @pytest.mark.unit
+class TestAuditLogRotation:
+    """Test audit log auto-cleanup."""
+
+    def test_audit_log_rotation(self, temp_db, monkeypatch):
+        """Test that old audit logs are pruned when limit is exceeded."""
+        monkeypatch.setattr(db, "_MAX_AUDIT_ROWS", 5)
+        for i in range(10):
+            db.log_request(f"svc{i}", "/test", "127.0.0.1", True, "GET", 200)
+        logs = db.get_audit_logs(limit=100)
+        assert len(logs) <= 5
+
+
+@pytest.mark.unit
 class TestDatabaseContextManager:
     """Test database connection context manager."""
     

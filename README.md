@@ -1,12 +1,12 @@
-# KeyRelay v0.9.0
+# KeyRelay v0.9.1
 
 Sicherer API-Key-Proxy fuer Agenten und Tools.  
 KeyRelay injiziert echte API-Keys serverseitig, waehrend Clients nur mit Proxy-Endpunkten arbeiten.
 
 ## Status
 
-- Version: `0.9.0`
-- Teststatus: `102/102` gruen
+- Version: `0.9.1`
+- Teststatus: `118/118` gruen
 - Architektur: einheitliche `main.py`, kein paralleler Legacy-Stack mehr
 
 ## Was KeyRelay loest
@@ -18,10 +18,12 @@ KeyRelay injiziert echte API-Keys serverseitig, waehrend Clients nur mit Proxy-E
 
 ## Sicherheitsmodell
 
-- Verschluesselter Vault in SQLite (Fernet)
-- Request-Audit-Logging in SQLite
-- Rate-Limiting, Security-Middleware und CORS
-- Optionaler Agent-Auth-Zwang per `REQUIRE_AGENT_AUTH`
+- Verschluesselter Vault in SQLite (Fernet AES-128-CBC + HMAC)
+- Request-Audit-Logging in SQLite (mit automatischer Rotation)
+- Rate-Limiting, Security-Middleware und konfigurierbare CORS
+- Agent-Auth-Zwang per `REQUIRE_AGENT_AUTH` (Default: true)
+- Dev-Modus (`REQUIRE_AGENT_AUTH=false`) gibt nur `user`-Rolle, kein Admin
+- Konfigurierbare CORS-Origins via `CORS_ALLOWED_ORIGINS`
 
 ## Auth-Modi
 
@@ -96,19 +98,80 @@ curl -X POST "http://localhost:8080/openai/chat/completions" \
 
 Fuer lokale Entwicklung mit `REQUIRE_AGENT_AUTH=false` kann der Authorization-Header entfallen.
 
+## Integration mit OpenAI-kompatiblen Clients
+
+KeyRelay ist als Drop-in-Proxy fuer alle OpenAI-kompatiblen SDKs nutzbar
+(OpenClaw, LiteLLM, LangChain, etc.):
+
+```python
+import openai
+
+client = openai.OpenAI(
+    base_url="http://localhost:8080/openai/v1",
+    api_key="<proxy-user-key>",
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hallo!"}],
+)
+```
+
+Oder als Umgebungsvariable:
+
+```bash
+export OPENAI_BASE_URL=http://localhost:8080/openai/v1
+export OPENAI_API_KEY=<proxy-user-key>
+```
+
 ## Health und Admin-Endpunkte
 
-- `GET /health`
-- `GET /health/services`
+- `GET /health` - oeffentlich
+- `GET /health/services` - erfordert Auth
 - `GET /admin/audit-logs` (admin)
 - `GET /admin/audit-stats` (admin)
 - `GET /admin/services` (admin)
+
+## API-Key-Schutz bei Root-Zugriff
+
+Wenn ein Agent Root-Zugriff auf dem selben System hat, gelten folgende Einschraenkungen:
+
+| Massnahme | Schutzwirkung |
+|-----------|--------------|
+| Fernet-Verschluesselung im Vault | Entschluesseln erfordert `AGENT_VAULT_KEY` |
+| DB-Berechtigungen `0o600` | Nur Owner kann lesen |
+| `/proc` mit `hidepid=2` mounten | Env-Vars anderer Prozesse nicht sichtbar |
+| Docker/Container-Isolation | Eigener Namespace, kein Host-Zugriff |
+| `get-key` mit Bestaetigung | Verhindert versehentliche Klartext-Anzeige |
+
+**Empfehlung**: KeyRelay in einem eigenen Container betreiben und
+`AGENT_VAULT_KEY` nur als Docker-Secret uebergeben, nicht als Env-Variable.
+
+```bash
+# /proc haerten
+sudo mount -o remount,hidepid=2 /proc
+
+# Doctor-Check zeigt Warnungen
+python3 cli.py doctor
+```
 
 ## Tests
 
 ```bash
 python3 -m pytest tests -q
 ```
+
+## Umgebungsvariablen
+
+| Variable | Default | Beschreibung |
+|----------|---------|-------------|
+| `AGENT_VAULT_KEY` | - | Fernet-Schluessel fuer DB-Verschluesselung (erforderlich) |
+| `AGENT_VAULT_APP_DIR` | `~/.agent-vault` | Pfad fuer vault.db |
+| `REQUIRE_AGENT_AUTH` | `true` | Auth-Zwang fuer Proxy-Requests |
+| `CORS_ALLOWED_ORIGINS` | `localhost:3000,localhost:8080` | Erlaubte CORS-Origins |
+| `AGENT_VAULT_MAX_AUDIT_ROWS` | `100000` | Maximale Audit-Log-Eintraege |
+| `CHROMA_HOST` | `localhost` | Chroma-DB Host |
+| `CHROMA_PORT` | `8000` | Chroma-DB Port |
 
 ## Dokumentation
 

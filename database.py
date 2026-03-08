@@ -57,13 +57,12 @@ def get_encryption_key() -> bytes:
             f"Environment variable {VAULT_KEY_ENV} not set. "
             "Generate a key with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
         )
-    # Ensure key is properly formatted for Fernet (32 bytes, base64-encoded)
-    if len(key) == 44:  # Standard Fernet key length in base64
+    if len(key) == 44:
         return key.encode()
     else:
-        # Derive key from string using PBKDF2
         import hashlib
-        derived = hashlib.pbkdf2_hmac('sha256', key.encode(), b'agent-vault-salt', 100000)
+        salt = hashlib.sha256(b"keyrelay-vault-" + key[:8].encode()).digest()
+        derived = hashlib.pbkdf2_hmac('sha256', key.encode(), salt, 200000)
         return base64.urlsafe_b64encode(derived)
 
 
@@ -364,6 +363,9 @@ def set_service_metadata(service_name: str, **kwargs) -> bool:
 
 # Audit Log Operations
 
+_MAX_AUDIT_ROWS = int(os.getenv("AGENT_VAULT_MAX_AUDIT_ROWS", "100000"))
+
+
 def log_request(
     service: str,
     endpoint: str,
@@ -385,6 +387,15 @@ def log_request(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (service, endpoint, client_ip, success, request_method,
                   response_status, error_message, user_agent))
+            cursor.execute('SELECT COUNT(*) FROM audit_logs')
+            count = cursor.fetchone()[0]
+            if count > _MAX_AUDIT_ROWS:
+                cursor.execute('''
+                    DELETE FROM audit_logs WHERE id IN (
+                        SELECT id FROM audit_logs ORDER BY timestamp ASC
+                        LIMIT ?
+                    )
+                ''', (count - _MAX_AUDIT_ROWS,))
             conn.commit()
     except Exception as e:
         print(f"Error logging request: {e}")

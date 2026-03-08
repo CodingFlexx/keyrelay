@@ -210,7 +210,7 @@ async def verify_proxy_access(
     """Verify access token unless explicitly disabled."""
     require_auth = _env_bool("REQUIRE_AGENT_AUTH", True)
     if not require_auth:
-        return {"username": "anonymous-dev", "role": "admin"}
+        return {"username": "anonymous-dev", "role": "user"}
 
     if not credentials:
         raise HTTPException(
@@ -233,7 +233,7 @@ async def verify_proxy_access(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing KeyRelay v0.9.0...")
+    logger.info("Initializing KeyRelay v0.9.1...")
     if not DB_PATH.exists():
         logger.info("Database not found, initializing...")
         init_database()
@@ -245,16 +245,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="KeyRelay Proxy",
     description="Secure API Key Injection Proxy with Audit Logging and RBAC",
-    version="0.9.0",
+    version="0.9.1",
     lifespan=lifespan,
 )
 
 app.add_middleware(SecurityMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst_size=10)
+_cors_origins = [
+    o.strip()
+    for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
@@ -424,17 +429,20 @@ async def proxy_request(
     )
 
 
-@app.api_route(
-    "/{service}/{path:path}",
-    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
-)
-async def proxy_endpoint(
-    request: Request,
-    service: str,
-    path: str,
-    user: Dict[str, Any] = Depends(verify_proxy_access),
-):
-    return await proxy_request(request=request, service=service, path=path, user=user)
+@app.get("/")
+async def root():
+    return {
+        "name": "KeyRelay Proxy",
+        "version": "0.9.1",
+        "description": "Secure API Key Injection Proxy with Audit Logging and RBAC",
+        "endpoints": {
+            "proxy": "/{service}/{path} - Proxy requests with auth injection",
+            "health": "/health - Health check",
+            "audit": "/admin/audit-logs - View audit logs (admin only)",
+        },
+        "cli": "python cli.py - Manage keys and users",
+        "docs": "/docs",
+    }
 
 
 @app.get("/health")
@@ -442,7 +450,7 @@ async def health_check():
     keys = list_api_keys()
     return {
         "status": "healthy",
-        "version": "0.9.0",
+        "version": "0.9.1",
         "services_available": len(TARGETS),
         "services_configured": len(keys),
         "configured_services": [k["service_name"] for k in keys],
@@ -451,7 +459,7 @@ async def health_check():
 
 
 @app.get("/health/services")
-async def services_health_check():
+async def services_health_check(user: Dict[str, Any] = Depends(verify_proxy_access)):
     keys = list_api_keys()
     service_status: Dict[str, Any] = {}
     health_endpoints = {
@@ -486,22 +494,6 @@ async def services_health_check():
     return {"status": "healthy", "services_checked": len(service_status), "services": service_status}
 
 
-@app.get("/")
-async def root():
-    return {
-        "name": "KeyRelay Proxy",
-        "version": "0.9.0",
-        "description": "Secure API Key Injection Proxy with Audit Logging and RBAC",
-        "endpoints": {
-            "proxy": "/{service}/{path} - Proxy requests with auth injection",
-            "health": "/health - Health check",
-            "audit": "/admin/audit-logs - View audit logs (admin only)",
-        },
-        "cli": "python cli.py - Manage keys and users",
-        "docs": "/docs",
-    }
-
-
 @app.get("/admin/audit-logs")
 async def admin_audit_logs(
     service: Optional[str] = None,
@@ -510,6 +502,7 @@ async def admin_audit_logs(
 ):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    limit = max(1, min(limit, 10000))
     logs = get_audit_logs(service=service, limit=limit)
     return {"logs": logs, "count": len(logs)}
 
@@ -526,6 +519,19 @@ async def admin_services(user: Dict[str, Any] = Depends(verify_proxy_access)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return {"services": list(TARGETS.keys()), "count": len(TARGETS)}
+
+
+@app.api_route(
+    "/{service}/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+)
+async def proxy_endpoint(
+    request: Request,
+    service: str,
+    path: str,
+    user: Dict[str, Any] = Depends(verify_proxy_access),
+):
+    return await proxy_request(request=request, service=service, path=path, user=user)
 
 
 if __name__ == "__main__":

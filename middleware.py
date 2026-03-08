@@ -25,15 +25,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     # Allowed service name pattern (alphanumeric, underscore, hyphen)
     SERVICE_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
     
-    # Blocked path patterns (path traversal attempts)
     BLOCKED_PATTERNS = [
-        re.compile(r'\.\./'),  # ../ path traversal
-        re.compile(r'\.\.\\'),  # Windows path traversal
-        re.compile(r'%2e%2e[/\\]', re.IGNORECASE),  # URL encoded ../ (case insensitive)
-        re.compile(r'%2e%2e%2f', re.IGNORECASE),  # URL encoded ../
-        re.compile(r'%2e%2e%5c', re.IGNORECASE),  # URL encoded ..\
-        re.compile(r'\x00'),  # Null bytes
-        re.compile(r'[~]'),  # Tilde expansion
+        re.compile(r'\.\./'),
+        re.compile(r'\.\.\\'),
+        re.compile(r'%2e%2e[/\\]', re.IGNORECASE),
+        re.compile(r'%2e%2e%2f', re.IGNORECASE),
+        re.compile(r'%2e%2e%5c', re.IGNORECASE),
+        re.compile(r'\x00'),
     ]
     
     # Maximum path length
@@ -43,16 +41,21 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
         """Validate and sanitize incoming requests."""
         
-        # Check request size
         content_length = request.headers.get('content-length')
-        if content_length and int(content_length) > 100 * 1024 * 1024:  # 100MB limit
-            logger.warning(f"Request too large: {content_length} bytes")
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request entity too large"}
-            )
+        if content_length:
+            try:
+                if int(content_length) > 100 * 1024 * 1024:
+                    logger.warning(f"Request too large: {content_length} bytes")
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request entity too large"}
+                    )
+            except (ValueError, OverflowError):
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid content-length header"}
+                )
         
-        # Check URL path for null bytes and traversal patterns (before path_params)
         raw_path = request.url.path
         
         # Check for null bytes in URL

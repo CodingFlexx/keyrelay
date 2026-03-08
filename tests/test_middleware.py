@@ -209,15 +209,72 @@ class TestRequestValidation:
         
         client = TestClient(app)
         
-        # Create a payload (10KB is fine) - use /health endpoint to avoid forwarding issues
         response = client.post(
             "/health",
             json={"data": "x" * 10000},
             headers={"Content-Type": "application/json"}
         )
         
-        # Should not be blocked with 413 for this size
         assert response.status_code != 413
+
+    def test_invalid_content_length_handled(self, mock_env_vars):
+        """Test that non-numeric content-length is rejected gracefully."""
+        from main import app
+
+        client = TestClient(app)
+        response = client.get("/health", headers={"Content-Length": "not-a-number"})
+        assert response.status_code in [200, 400]
+
+    def test_tilde_in_path_allowed(self, mock_env_vars):
+        """Test that tilde in URL path is no longer blocked."""
+        from main import app
+
+        client = TestClient(app)
+        response = client.get("/openai/~user/resource")
+        assert response.status_code != 400
+
+
+@pytest.mark.unit
+class TestAnonymousDevMode:
+    """Test that anonymous dev mode does not grant admin."""
+
+    def test_anonymous_dev_gets_user_role(self, mock_env_vars):
+        """Anonymous dev mode should yield 'user' role, not 'admin'."""
+        import importlib
+        import main
+        importlib.reload(main)
+        from main import app
+
+        client = TestClient(app)
+        response = client.get("/admin/services")
+        assert response.status_code == 403
+
+    def test_health_services_accessible_in_dev_mode(self, mock_env_vars):
+        """Health services endpoint should be accessible in dev mode (user role)."""
+        import importlib
+        import main
+        importlib.reload(main)
+        from main import app
+
+        client = TestClient(app)
+        response = client.get("/health/services")
+        assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestCORSConfiguration:
+    """Test that CORS is no longer wildcard."""
+
+    def test_cors_not_wildcard_by_default(self, mock_env_vars):
+        from main import app
+
+        client = TestClient(app)
+        response = client.get(
+            "/health",
+            headers={"Origin": "https://evil.com"}
+        )
+        cors_header = response.headers.get("access-control-allow-origin", "")
+        assert cors_header != "*"
 
 
 if __name__ == "__main__":

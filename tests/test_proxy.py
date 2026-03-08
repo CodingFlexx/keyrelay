@@ -73,6 +73,7 @@ class TestProxyBasic:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "KeyRelay Proxy"
+        assert data["version"] == "0.9.1"
         assert "endpoints" in data
         assert "cli" in data
     
@@ -602,6 +603,14 @@ class TestProxyConfiguration:
         
         assert app.title == "KeyRelay Proxy"
         assert "Secure API Key" in app.description
+    
+    def test_admin_services_requires_admin(self, mock_env_vars):
+        """Test that admin endpoints require admin role."""
+        from main import app
+
+        client = TestClient(app)
+        response = client.get("/admin/services")
+        assert response.status_code == 403
 
 
 if __name__ == "__main__":
