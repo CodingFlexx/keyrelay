@@ -71,4 +71,4 @@ echo -e "${YELLOW}Press Ctrl+C to stop${NC}"
 echo "======================"
 
 # Run the server with explicit host/port
-exec uvicorn main:app --host "$HOST" --port "$PORT"
+exec uvicorn app.main:app --host "$HOST" --port "$PORT"

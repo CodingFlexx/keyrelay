@@ -20,7 +20,7 @@ from rich.prompt import Confirm
 from rich import box
 
 # Import database module
-from database import (
+from app.db.database import (
     init_database, add_api_key, get_api_key, list_api_keys,
     remove_api_key, rotate_api_key, set_service_metadata,
     log_request, get_audit_logs, get_audit_stats,
@@ -916,7 +916,7 @@ def _mask_value(value: str) -> str:
 
 
 def _start_server(host: str, port: int) -> None:
-    command = ["uvicorn", "main:app", "--host", host, "--port", str(port)]
+    command = ["uvicorn", "app.main:app", "--host", host, "--port", str(port)]
     console.print(f"[green]Starte KeyRelay Proxy auf http://{host}:{port}[/green]")
     subprocess.run(command, check=True)
 

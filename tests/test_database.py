@@ -27,7 +27,7 @@ from cryptography.fernet import Fernet
 # Set test environment variable before importing database
 os.environ["AGENT_VAULT_KEY"] = "test-master-key-for-testing-only-32bytes!"
 
-import database as db
+from app.db import database as db
 
 
 @pytest.fixture(scope="function")

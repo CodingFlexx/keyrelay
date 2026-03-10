@@ -19,7 +19,7 @@ echo "[keyrelay] startup: checking vault at ${DB_PATH}"
 if [ ! -f "${DB_PATH}" ]; then
   echo "[keyrelay] vault database not found - initializing"
   python3 - <<'PY'
-import database
+import app.db.database as database
 database.init_database()
 print("[keyrelay] init_database completed")
 PY
@@ -35,7 +35,7 @@ if [ -n "${BOOTSTRAP_ADMIN_USERNAME}" ] && [ -n "${BOOTSTRAP_ADMIN_PASSWORD}" ];
   echo "[keyrelay] bootstrap: ensuring admin user '${BOOTSTRAP_ADMIN_USERNAME}' exists"
   python3 - <<'PY'
 import os
-import database
+import app.db.database as database
 
 username = os.environ["BOOTSTRAP_ADMIN_USERNAME"]
 password = os.environ["BOOTSTRAP_ADMIN_PASSWORD"]
@@ -62,4 +62,4 @@ else
 fi
 
 echo "[keyrelay] startup: launching api server"
-exec uvicorn main:app --host 0.0.0.0 --port "${AGENT_VAULT_PORT:-8080}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "${AGENT_VAULT_PORT:-8080}"

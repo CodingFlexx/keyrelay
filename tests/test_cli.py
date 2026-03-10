@@ -59,7 +59,7 @@ class TestCLIHelpers:
     def test_get_encryption_key_from_env(self, mock_env_vars):
         """Test getting encryption key from shared database helper."""
         import cli
-        import database
+        import app.db.database as database
         
         # CLI should expose the same implementation as database.py
         assert cli.get_encryption_key is database.get_encryption_key

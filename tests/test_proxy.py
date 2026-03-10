@@ -31,7 +31,7 @@ def mock_env_vars(monkeypatch, tmp_path):
     monkeypatch.setenv("REQUIRE_AGENT_AUTH", "false")
     monkeypatch.setenv("AGENT_VAULT_APP_DIR", str(tmp_path))
     import importlib
-    import database
+    import app.db.database as database
 
     importlib.reload(database)
     database.init_database()
@@ -51,7 +51,7 @@ class TestProxyBasic:
     
     def test_health_endpoint(self, mock_env_vars):
         """Test health check endpoint."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get("/health")
@@ -65,7 +65,7 @@ class TestProxyBasic:
     
     def test_root_endpoint(self, mock_env_vars):
         """Test root endpoint returns usage info."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get("/")
@@ -79,7 +79,7 @@ class TestProxyBasic:
     
     def test_unknown_service(self, mock_env_vars):
         """Test proxy returns 404 for unknown service."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get("/unknown_service/test")
@@ -95,7 +95,7 @@ class TestProxyForwarding:
     @respx.mock
     def test_openrouter_forwarding(self, mock_env_vars, sample_request_data, sample_response_data):
         """Test forwarding request to OpenRouter."""
-        from main import app
+        from app.main import app
         # Mock OpenRouter API
         route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
             return_value=Response(200, json=sample_response_data)
@@ -119,7 +119,7 @@ class TestProxyForwarding:
     @respx.mock
     def test_openai_forwarding(self, mock_env_vars, sample_request_data, sample_response_data):
         """Test forwarding request to OpenAI."""
-        from main import app
+        from app.main import app
         
         route = respx.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=Response(200, json=sample_response_data)
@@ -137,7 +137,7 @@ class TestProxyForwarding:
     @respx.mock
     def test_github_forwarding(self, mock_env_vars):
         """Test forwarding request to GitHub API."""
-        from main import app
+        from app.main import app
         
         github_response = {
             "login": "testuser",
@@ -163,7 +163,7 @@ class TestProxyForwarding:
     @respx.mock
     def test_query_params_forwarding(self, mock_env_vars):
         """Test query parameters are forwarded correctly."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://api.github.com/search/repositories").mock(
             return_value=Response(200, json={"items": []})
@@ -183,7 +183,7 @@ class TestProxyForwarding:
     @respx.mock
     def test_custom_headers_forwarding(self, mock_env_vars):
         """Test custom headers are forwarded."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://api.openai.com/v1/models").mock(
             return_value=Response(200, json={"data": []})
@@ -209,7 +209,7 @@ class TestProxyErrors:
     @respx.mock
     def test_timeout_error(self, mock_env_vars):
         """Test handling of timeout errors."""
-        from main import app
+        from app.main import app
         import httpx
         
         route = respx.post("https://api.openai.com/v1/chat/completions").mock(
@@ -229,7 +229,7 @@ class TestProxyErrors:
     @respx.mock
     def test_connection_error(self, mock_env_vars):
         """Test handling of connection errors."""
-        from main import app
+        from app.main import app
         import httpx
         
         route = respx.get("https://api.openai.com/v1/models").mock(
@@ -245,7 +245,7 @@ class TestProxyErrors:
     @respx.mock
     def test_upstream_4xx_error(self, mock_env_vars):
         """Test forwarding of 4xx errors from upstream."""
-        from main import app
+        from app.main import app
         
         route = respx.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=Response(400, json={"error": "Invalid request"})
@@ -262,7 +262,7 @@ class TestProxyErrors:
     @respx.mock
     def test_upstream_5xx_error(self, mock_env_vars):
         """Test handling of 5xx errors from upstream."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://api.openai.com/v1/models").mock(
             return_value=Response(503, json={"error": "Service unavailable"})
@@ -280,7 +280,7 @@ class TestProxyAuthInjection:
     
     def test_bearer_token_injection(self, mock_env_vars):
         """Test Bearer token injection for services."""
-        from main import get_auth_header
+        from app.core.security import get_auth_header
 
         auth = get_auth_header("openrouter", "test-key")
         assert auth.startswith("Bearer ")
@@ -290,28 +290,28 @@ class TestProxyAuthInjection:
     
     def test_github_token_injection(self, mock_env_vars):
         """Test GitHub token format."""
-        from main import get_auth_header
+        from app.core.security import get_auth_header
 
         auth = get_auth_header("github", "test-pat")
         assert auth.startswith("token ")
     
     def test_telegram_url_injection(self, mock_env_vars):
         """Test Telegram token in URL."""
-        from main import get_auth_header
+        from app.core.security import get_auth_header
 
         auth = get_auth_header("telegram", "bot123:token")
         assert auth is None  # Telegram uses token in URL
     
     def test_twilio_basic_auth(self, mock_env_vars):
         """Test Twilio Basic auth format."""
-        from main import get_auth_header
+        from app.core.security import get_auth_header
 
         auth = get_auth_header("twilio", "auth_token", {"account_sid": "AC123"})
         assert auth.startswith("Basic ")
     
     def test_unknown_service_defaults_to_bearer(self, mock_env_vars):
         """Test that unknown service uses Bearer auth by default."""
-        from main import get_auth_header
+        from app.core.security import get_auth_header
 
         auth = get_auth_header("custom_service", "custom-key")
         assert auth == "Bearer custom-key"
@@ -323,21 +323,21 @@ class TestProxyDynamicURLs:
     
     def test_azure_openai_url(self, mock_env_vars):
         """Test Azure OpenAI URL with resource."""
-        from main import TARGETS
+        from app.core.config import TARGETS
         
         base = TARGETS["azure_openai"]
         assert "{resource}" in base
     
     def test_weaviate_url(self, mock_env_vars):
         """Test Weaviate URL with cluster."""
-        from main import TARGETS
+        from app.core.config import TARGETS
         
         base = TARGETS["weaviate"]
         assert "{cluster}" in base
     
     def test_supabase_url(self, mock_env_vars):
         """Test Supabase URL with project."""
-        from main import TARGETS
+        from app.core.config import TARGETS
         
         base = TARGETS["supabase"]
         assert "{project}" in base
@@ -350,7 +350,7 @@ class TestProxyMethods:
     @respx.mock
     def test_get_request(self, mock_env_vars):
         """Test GET request forwarding."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://api.openai.com/v1/models").mock(
             return_value=Response(200, json={"data": []})
@@ -365,7 +365,7 @@ class TestProxyMethods:
     @respx.mock
     def test_post_request(self, mock_env_vars, sample_request_data):
         """Test POST request forwarding."""
-        from main import app
+        from app.main import app
         
         route = respx.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=Response(200, json={})
@@ -380,7 +380,7 @@ class TestProxyMethods:
     @respx.mock
     def test_put_request(self, mock_env_vars):
         """Test PUT request forwarding."""
-        from main import app
+        from app.main import app
         
         route = respx.put("https://api.github.com/user/starred/owner/repo").mock(
             return_value=Response(204)
@@ -395,7 +395,7 @@ class TestProxyMethods:
     @respx.mock
     def test_delete_request(self, mock_env_vars):
         """Test DELETE request forwarding."""
-        from main import app
+        from app.main import app
         
         route = respx.delete("https://api.github.com/user/starred/owner/repo").mock(
             return_value=Response(204)
@@ -410,7 +410,7 @@ class TestProxyMethods:
     @respx.mock
     def test_patch_request(self, mock_env_vars):
         """Test PATCH request forwarding."""
-        from main import app
+        from app.main import app
         
         route = respx.patch("https://api.github.com/user").mock(
             return_value=Response(200, json={})
@@ -439,7 +439,7 @@ class TestProxyHeaders:
     
     def test_github_specific_headers(self, mock_env_vars):
         """Test GitHub-specific headers are added."""
-        from main import app
+        from app.main import app
         
         # Headers are added in proxy_request and asserted in integration tests
         pass
@@ -452,7 +452,7 @@ class TestProxyServiceSpecific:
     @respx.mock
     def test_gemini_query_param_auth(self, mock_env_vars):
         """Test Gemini API key in query params."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://generativelanguage.googleapis.com/v1beta/models").mock(
             return_value=Response(200, json={"models": []})
@@ -468,7 +468,7 @@ class TestProxyServiceSpecific:
     @respx.mock
     def test_openrouter_extra_headers(self, mock_env_vars):
         """Test OpenRouter extra headers."""
-        from main import app
+        from app.main import app
         
         route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
             return_value=Response(200, json={})
@@ -489,7 +489,7 @@ class TestProxyServiceSpecific:
     @respx.mock
     def test_anthropic_version_header(self, mock_env_vars):
         """Test Anthropic version header."""
-        from main import app
+        from app.main import app
         
         route = respx.post("https://api.anthropic.com/v1/messages").mock(
             return_value=Response(200, json={})
@@ -516,10 +516,10 @@ class TestProxyLogging:
         
         # Logging is configured in main.py
         # This test verifies logging configuration exists
-        from main import logger
+        from app.main import logger
         
         # Logger name can be '__main__' or 'main' depending on import
-        assert logger.name in ["__main__", "main"]
+        assert logger.name in ["__main__", "main", "app.main"]
         assert logger.level <= logging.INFO
 
 
@@ -530,7 +530,7 @@ class TestProxyResponseHandling:
     @respx.mock
     def test_json_response(self, mock_env_vars):
         """Test JSON response forwarding."""
-        from main import app
+        from app.main import app
         
         data = {"key": "value", "nested": {"data": 123}}
         route = respx.get("https://api.openai.com/v1/models").mock(
@@ -546,7 +546,7 @@ class TestProxyResponseHandling:
     @respx.mock
     def test_binary_response(self, mock_env_vars):
         """Test binary response forwarding."""
-        from main import app
+        from app.main import app
         
         binary_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         route = respx.get("https://api.stability.ai/v2beta/image").mock(
@@ -562,7 +562,7 @@ class TestProxyResponseHandling:
     @respx.mock
     def test_response_headers_forwarded(self, mock_env_vars):
         """Test response headers are forwarded."""
-        from main import app
+        from app.main import app
         
         route = respx.get("https://api.openai.com/v1/models").mock(
             return_value=Response(
@@ -585,7 +585,7 @@ class TestProxyConfiguration:
     
     def test_targets_configuration(self, mock_env_vars):
         """Test that TARGETS are properly configured."""
-        from main import TARGETS
+        from app.core.config import TARGETS
         
         # Check that common services are present
         assert "openrouter" in TARGETS
@@ -599,14 +599,14 @@ class TestProxyConfiguration:
     
     def test_app_metadata(self, mock_env_vars):
         """Test FastAPI app metadata."""
-        from main import app
+        from app.main import app
         
         assert app.title == "KeyRelay Proxy"
         assert "Secure API Key" in app.description
     
     def test_admin_services_requires_admin(self, mock_env_vars):
         """Test that admin endpoints require admin role."""
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get("/admin/services")

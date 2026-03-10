@@ -22,7 +22,7 @@ def mock_env_vars(monkeypatch, tmp_path):
     monkeypatch.setenv("REQUIRE_AGENT_AUTH", "false")
     monkeypatch.setenv("AGENT_VAULT_APP_DIR", str(tmp_path))
     import importlib
-    import database
+    import app.db.database as database
 
     importlib.reload(database)
     database.init_database()
@@ -35,7 +35,7 @@ class TestSecurityMiddleware:
     
     def test_path_traversal_blocked(self, mock_env_vars):
         """Test that path traversal attempts are blocked."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         
@@ -52,7 +52,7 @@ class TestSecurityMiddleware:
     
     def test_null_bytes_blocked(self, mock_env_vars):
         """Test that null bytes are handled."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         # Use URL-encoded null byte (%00) to test middleware handling
@@ -63,7 +63,7 @@ class TestSecurityMiddleware:
     
     def test_long_path_handled(self, mock_env_vars):
         """Test that very long paths are handled."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         long_path = "/openrouter/" + "a" * 3000
@@ -74,7 +74,7 @@ class TestSecurityMiddleware:
     
     def test_invalid_service_name_blocked(self, mock_env_vars):
         """Test that invalid service names are blocked."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         
@@ -89,7 +89,7 @@ class TestSecurityMiddleware:
     
     def test_security_headers_present(self, mock_env_vars):
         """Test that security headers are added to responses."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get("/health")
@@ -105,7 +105,7 @@ class TestRateLimitMiddleware:
     
     def _build_rate_limited_app(self):
         """Build an app with active rate limit middleware for deterministic tests."""
-        from middleware import RateLimitMiddleware
+        from app.middleware.middleware import RateLimitMiddleware
 
         app = FastAPI()
         app.add_middleware(RateLimitMiddleware, requests_per_minute=5, burst_size=1)
@@ -148,7 +148,7 @@ class TestLoggingMiddleware:
     
     def test_response_time_header(self, mock_env_vars):
         """Test that response time header is added."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get("/health")
@@ -167,7 +167,7 @@ class TestCORSMiddleware:
     
     def test_cors_preflight(self, mock_env_vars):
         """Test CORS preflight requests."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.options(
@@ -186,7 +186,7 @@ class TestCORSMiddleware:
     
     def test_cors_headers_on_response(self, mock_env_vars):
         """Test CORS headers on regular responses."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         response = client.get(
@@ -205,7 +205,7 @@ class TestRequestValidation:
     
     def test_large_request_blocked(self, mock_env_vars):
         """Test that very large requests are handled."""
-        from main import app
+        from app.main import app
         
         client = TestClient(app)
         
@@ -219,7 +219,7 @@ class TestRequestValidation:
 
     def test_invalid_content_length_handled(self, mock_env_vars):
         """Test that non-numeric content-length is rejected gracefully."""
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get("/health", headers={"Content-Length": "not-a-number"})
@@ -227,7 +227,7 @@ class TestRequestValidation:
 
     def test_tilde_in_path_allowed(self, mock_env_vars):
         """Test that tilde in URL path is no longer blocked."""
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get("/openai/~user/resource")
@@ -241,9 +241,9 @@ class TestAnonymousDevMode:
     def test_anonymous_dev_gets_user_role(self, mock_env_vars):
         """Anonymous dev mode should yield 'user' role, not 'admin'."""
         import importlib
-        import main
+        import app.main as main
         importlib.reload(main)
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get("/admin/services")
@@ -252,9 +252,9 @@ class TestAnonymousDevMode:
     def test_health_services_accessible_in_dev_mode(self, mock_env_vars):
         """Health services endpoint should be accessible in dev mode (user role)."""
         import importlib
-        import main
+        import app.main as main
         importlib.reload(main)
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get("/health/services")
@@ -266,7 +266,7 @@ class TestCORSConfiguration:
     """Test that CORS is no longer wildcard."""
 
     def test_cors_not_wildcard_by_default(self, mock_env_vars):
-        from main import app
+        from app.main import app
 
         client = TestClient(app)
         response = client.get(
