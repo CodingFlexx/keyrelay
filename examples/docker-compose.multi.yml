@@ -1,0 +1,35 @@
+services:
+  keyrelay:
+    image: codingflexx/keyrelay:latest
+    container_name: keyrelay-multi
+    restart: unless-stopped
+    networks:
+      - keyrelay_net
+    environment:
+      AGENT_VAULT_APP_DIR: /app/data
+      AGENT_VAULT_KEY_FILE: /app/data/.vault_key
+      KEYRELAY_SECURITY_MODE: hardened_local
+      REQUIRE_AGENT_AUTH: "true"
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: change-me-now
+      BOOTSTRAP_ADMIN_ROLE: admin
+      BOOTSTRAP_ADMIN_SCOPES: "*"
+    volumes:
+      - keyrelay_data:/app/data
+
+  # Example agent container on same host, separate container.
+  agent-example:
+    image: alpine:3.21
+    container_name: agent-example
+    command: ["sh", "-c", "sleep infinity"]
+    networks:
+      - keyrelay_net
+    environment:
+      KEYRELAY_BASE_URL: http://keyrelay:8080
+
+networks:
+  keyrelay_net:
+    driver: bridge
+
+volumes:
+  keyrelay_data:

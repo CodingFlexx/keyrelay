@@ -1,0 +1,22 @@
+services:
+  keyrelay:
+    image: codingflexx/keyrelay:latest
+    container_name: keyrelay-local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      AGENT_VAULT_APP_DIR: /app/data
+      AGENT_VAULT_KEY_FILE: /app/data/.vault_key
+      KEYRELAY_SECURITY_MODE: hardened_local
+      REQUIRE_AGENT_AUTH: "true"
+      # Leave BOOTSTRAP_ADMIN_USERNAME and PASSWORD empty to trigger First-Run UI Setup
+      BOOTSTRAP_ADMIN_USERNAME: ""
+      BOOTSTRAP_ADMIN_PASSWORD: ""
+      BOOTSTRAP_ADMIN_ROLE: admin
+      BOOTSTRAP_ADMIN_SCOPES: "*"
+    volumes:
+      - keyrelay_data:/app/data
+
+volumes:
+  keyrelay_data:

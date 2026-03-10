@@ -1,0 +1,30 @@
+services:
+  agent-vault-proxy:
+    build: .
+    container_name: agent-vault-proxy
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist SQLite vault (keys/users/audit logs)
+      - ./data:/app/data
+    environment:
+      # Auto-generated key will be stored here if not provided
+      - AGENT_VAULT_KEY_FILE=/app/data/.vault_key
+      - AGENT_VAULT_APP_DIR=/app/data
+      - KEYRELAY_SECURITY_MODE=${KEYRELAY_SECURITY_MODE:-hardened_local}
+      - REQUIRE_AGENT_AUTH=${REQUIRE_AGENT_AUTH:-true}
+      - BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME:-}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
+      - BOOTSTRAP_ADMIN_ROLE=${BOOTSTRAP_ADMIN_ROLE:-admin}
+      - BOOTSTRAP_ADMIN_SCOPES=${BOOTSTRAP_ADMIN_SCOPES:-*}
+      - BOOTSTRAP_ADMIN_API_KEY_PATH=${BOOTSTRAP_ADMIN_API_KEY_PATH:-}
+      # Chroma configuration (customizable host/port)
+      - CHROMA_HOST=${CHROMA_HOST:-chroma}
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

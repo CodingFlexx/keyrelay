@@ -1,0 +1,47 @@
+services:
+  keyrelay:
+    image: codingflexx/keyrelay:latest
+    container_name: keyrelay-remote
+    restart: unless-stopped
+    networks:
+      - edge
+    environment:
+      AGENT_VAULT_APP_DIR: /app/data
+      AGENT_VAULT_KEY_FILE: /app/data/.vault_key
+      KEYRELAY_SECURITY_MODE: remote_secure
+      REQUIRE_AGENT_AUTH: "true"
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: change-me-now
+      BOOTSTRAP_ADMIN_ROLE: admin
+      BOOTSTRAP_ADMIN_SCOPES: "*"
+    volumes:
+      - keyrelay_data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.keyrelay.rule=Host(`keyrelay.example.com`)
+      - traefik.http.routers.keyrelay.entrypoints=websecure
+      - traefik.http.routers.keyrelay.tls=true
+      - traefik.http.services.keyrelay.loadbalancer.server.port=8080
+
+  # Reverse proxy example for scenario 3.
+  traefik:
+    image: traefik:v3.2
+    container_name: keyrelay-traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - edge
+
+networks:
+  edge:
+    driver: bridge
+
+volumes:
+  keyrelay_data:

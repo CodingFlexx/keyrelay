@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KeyRelay Admin Dashboard</title>
+  <style>
+    :root { --bg:#0b1020; --panel:#141c33; --text:#dbe5ff; --accent:#67b3ff; --warn:#ffd166; --ok:#88e08f; --err:#ff7b7b; }
+    body { margin:0; font-family: ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+    h1,h2 { margin: 0 0 12px 0; }
+    .panel { background:var(--panel); border:1px solid #223158; border-radius:10px; padding:16px; margin-bottom:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    input, select { background:#0f162b; color:var(--text); border:1px solid #29407a; border-radius:8px; padding:10px; min-width:200px; }
+    button { background:var(--accent); color:#081224; border:none; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
+    button.danger { background: var(--err); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .metric { padding:10px; border:1px solid #2a3e70; border-radius:8px; background:#101934; }
+    .small { opacity:0.8; font-size:0.92rem; }
+    .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
+    table { width:100%; border-collapse:collapse; font-size:0.92rem; }
+    th,td { border-bottom:1px solid #273a68; padding:8px; text-align:left; }
+    code { background:#0d1530; padding:2px 6px; border-radius:6px; }
+    .hidden { display: none !important; }
+    .modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index: 1000; }
+    .modal-content { background: var(--panel); padding: 24px; border-radius: 10px; border: 1px solid #29407a; max-width: 500px; width: 100%; }
+    .modal-content h3 { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>KeyRelay Admin Dashboard</h1>
+
+    <!-- First Run Setup Mask -->
+    <div id="setupSection" class="panel hidden">
+      <h2>First Run Setup</h2>
+      <p class="small">Welcome to KeyRelay! Please create your primary admin account to get started.</p>
+      <div class="row">
+        <input id="setupUser" type="text" placeholder="Admin Username">
+        <input id="setupPass" type="password" placeholder="Secure Password">
+        <button id="setupBtn">Complete Setup</button>
+      </div>
+      <p id="setupStatus" class="small"></p>
+    </div>
+
+    <!-- Login Mask -->
+    <div id="loginSection" class="panel">
+      <h2>Admin Login</h2>
+      <div class="row">
+        <input id="loginUser" type="text" placeholder="Username (e.g. admin)">
+        <input id="loginPass" type="password" placeholder="Password">
+        <button id="loginBtn">Login</button>
+      </div>
+      <p id="loginStatus" class="small"></p>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboardSection" class="hidden">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <div><span class="small ok" id="dashboardStatus">Logged in.</span></div>
+          <button id="logoutBtn">Logout</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>System Overview</h2>
+        <div id="metrics" class="grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Provider Services & Keys</h2>
+          <button id="showAddKeyBtn">+ Add Service Key</button>
+        </div>
+        <table>
+          <thead><tr><th>Service</th><th>Action</th></tr></thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Admins & Proxy Users (Agents)</h2>
+          <button id="showAddUserBtn">+ Add User / Agent</button>
+        </div>
+        <h3>Administrators</h3>
+        <table>
+          <thead><tr><th>Username</th><th>Scopes</th><th>Last Access</th><th>Action</th></tr></thead>
+          <tbody id="adminsBody"></tbody>
+        </table>
+        
+        <h3 style="margin-top: 24px;">Proxy Users (AI Agents)</h3>
+        <table>
+          <thead><tr><th>Username</th><th>Scopes</th><th>Last Access</th><th>Action</th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Audit Logs</h2>
+        <table>
+          <thead><tr><th>Time</th><th>Service</th><th>Status</th><th>Method</th><th>Endpoint</th></tr></thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div id="addKeyModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Add New Provider Key</h3>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <input id="newKeyService" type="text" placeholder="Service (e.g. openai, anthropic...)">
+        <input id="newKeyValue" type="password" placeholder="API Key (sk-...)">
+        <div class="row">
+          <button id="submitKeyBtn">Save</button>
+          <button class="danger" onclick="document.getElementById('addKeyModal').classList.add('hidden')">Cancel</button>
+        </div>
+        <p id="addKeyStatus" class="small"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="addUserModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Add New Admin / Agent</h3>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <select id="newUserRole">
+          <option value="user">Proxy User (AI Agent)</option>
+          <option value="admin">Administrator</option>
+        </select>
+        <input id="newUserName" type="text" placeholder="Username (e.g. my-agent)">
+        <input id="newUserPass" type="password" placeholder="Password (optional)">
+        <input id="newUserScopes" type="text" placeholder="Scopes (e.g. openai,anthropic or *)" value="*">
+        <div class="row">
+          <button id="submitUserBtn">Create</button>
+          <button class="danger" onclick="document.getElementById('addUserModal').classList.add('hidden')">Cancel</button>
+        </div>
+        <p id="addUserStatus" class="small"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="showApiKeyModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>User Created Successfully!</h3>
+      <p>Here is the Proxy API Key for your agent. <strong>It will only be shown this one time!</strong></p>
+      <code id="generatedApiKey" style="display:block; padding:10px; word-break:break-all; margin-bottom:10px;"></code>
+      <button onclick="document.getElementById('showApiKeyModal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+
+  <script>
+    const loginSection = document.getElementById("loginSection");
+    const setupSection = document.getElementById("setupSection");
+    const dashboardSection = document.getElementById("dashboardSection");
+    
+    let sessionToken = sessionStorage.getItem("keyrelay_token") || "";
+
+    async function apiRequest(path, method = "GET", body = null) {
+      const headers = { "Content-Type": "application/json" };
+      if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
+      
+      const config = { method, headers };
+      if (body) config.body = JSON.stringify(body);
+      
+      const response = await fetch(path, config);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+      return data;
+    }
+
+    async function checkSetupStatus() {
+      try {
+        const res = await apiRequest("/admin/setup-status");
+        if (res.needs_setup) {
+          loginSection.classList.add("hidden");
+          setupSection.classList.remove("hidden");
+        }
+      } catch (e) {
+        console.error("Setup check failed:", e);
+      }
+    }
+
+    async function setupAdmin() {
+      const user = document.getElementById("setupUser").value.trim();
+      const pass = document.getElementById("setupPass").value.trim();
+      const statusEl = document.getElementById("setupStatus");
+      
+      if (!user || !pass) {
+        statusEl.textContent = "Please fill in username and password";
+        statusEl.className = "small err";
+        return;
+      }
+
+      statusEl.textContent = "Setting up...";
+      statusEl.className = "small";
+      
+      try {
+        const res = await apiRequest("/admin/setup", "POST", { username: user, password: pass });
+        sessionToken = res.token;
+        sessionStorage.setItem("keyrelay_token", sessionToken);
+        
+        setupSection.classList.add("hidden");
+        // Don't show API key modal for the initial admin setup
+        showDashboard();
+      } catch (e) {
+        statusEl.textContent = `Error: ${e.message}`;
+        statusEl.className = "small err";
+      }
+    }
+
+    document.getElementById("setupBtn").addEventListener("click", setupAdmin);
+
+    async function login() {
+      const user = document.getElementById("loginUser").value.trim();
+      const pass = document.getElementById("loginPass").value.trim();
+      const statusEl = document.getElementById("loginStatus");
+      
+      statusEl.textContent = "Logging in...";
+      statusEl.className = "small";
+      
+      try {
+        const res = await apiRequest("/admin/login", "POST", { username: user, password: pass });
+        sessionToken = res.token;
+        sessionStorage.setItem("keyrelay_token", sessionToken);
+        statusEl.textContent = "";
+        showDashboard();
+      } catch (e) {
+        statusEl.textContent = `Error: ${e.message}`;
+        statusEl.className = "small err";
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", login);
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      sessionToken = "";
+      sessionStorage.removeItem("keyrelay_token");
+      dashboardSection.classList.add("hidden");
+      loginSection.classList.remove("hidden");
+    });
+
+    function metric(name, value) {
+      return `<div class="metric"><div class="small">${name}</div><div><strong>${value}</strong></div></div>`;
+    }
+
+    async function loadData() {
+      try {
+        const [health, stats, keys, users, logs] = await Promise.all([
+          apiRequest("/health"),
+          apiRequest("/admin/audit-stats"),
+          apiRequest("/admin/keys"),
+          apiRequest("/admin/users"),
+          apiRequest("/admin/audit-logs?limit=20")
+        ]);
+
+        document.getElementById("metrics").innerHTML = [
+          metric("Version", health.version || "-"),
+          metric("Configured Services", health.services_configured || 0),
+          metric("Audit Total", stats.total_requests || 0),
+          metric("Audit Failed", stats.failed || 0),
+          metric("Users", users.count || 0),
+        ].join("");
+
+        document.getElementById("keysBody").innerHTML = (keys.keys || []).map(k =>
+          `<tr>
+            <td><code>${k.service_name}</code></td>
+            <td><button class="danger" onclick="deleteKey('${k.service_name}')">Delete</button></td>
+          </tr>`
+        ).join("");
+
+        document.getElementById("adminsBody").innerHTML = (users.users || []).filter(u => u.role === "admin").map(u =>
+          `<tr>
+            <td>${u.username}</td><td>${(u.scopes || []).join(", ")}</td><td>${u.last_access || "never"}</td>
+            <td><button class="danger" onclick="deleteUser('${u.username}')">Delete</button></td>
+          </tr>`
+        ).join("");
+
+        document.getElementById("usersBody").innerHTML = (users.users || []).filter(u => u.role === "user").map(u =>
+          `<tr>
+            <td>${u.username}</td><td>${(u.scopes || []).join(", ")}</td><td>${u.last_access || "never"}</td>
+            <td><button class="danger" onclick="deleteUser('${u.username}')">Delete</button></td>
+          </tr>`
+        ).join("");
+
+        document.getElementById("logsBody").innerHTML = (logs.logs || []).map(l =>
+          `<tr><td>${l.timestamp || "-"}</td><td>${l.service || "-"}</td><td>${l.response_status || "-"}</td><td>${l.request_method || "-"}</td><td>${l.endpoint || "-"}</td></tr>`
+        ).join("");
+
+      } catch (error) {
+        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("404")) {
+           document.getElementById("logoutBtn").click();
+        } else {
+           alert("Error loading data: " + error.message);
+        }
+      }
+    }
+
+    function showDashboard() {
+      loginSection.classList.add("hidden");
+      dashboardSection.classList.remove("hidden");
+      loadData();
+    }
+
+    if (sessionToken) {
+      showDashboard();
+    } else {
+      checkSetupStatus();
+    }
+
+    // Modals & Actions
+    document.getElementById("showAddKeyBtn").addEventListener("click", () => {
+      document.getElementById("addKeyModal").classList.remove("hidden");
+      document.getElementById("addKeyStatus").textContent = "";
+    });
+
+    document.getElementById("submitKeyBtn").addEventListener("click", async () => {
+      const srv = document.getElementById("newKeyService").value.trim();
+      const val = document.getElementById("newKeyValue").value.trim();
+      const st = document.getElementById("addKeyStatus");
+      if (!srv || !val) { st.textContent = "Please fill in all fields"; st.className="small err"; return; }
+      
+      try {
+        await apiRequest("/admin/keys", "POST", { service_name: srv, api_key: val });
+        document.getElementById("addKeyModal").classList.add("hidden");
+        document.getElementById("newKeyService").value = "";
+        document.getElementById("newKeyValue").value = "";
+        loadData();
+      } catch(e) {
+        st.textContent = e.message; st.className="small err";
+      }
+    });
+
+    async function deleteKey(service) {
+      if(!confirm(`Really delete provider key for ${service}?`)) return;
+      try {
+        await apiRequest(`/admin/keys/${service}`, "DELETE");
+        loadData();
+      } catch(e) { alert(e.message); }
+    }
+
+    document.getElementById("showAddUserBtn").addEventListener("click", () => {
+      document.getElementById("addUserModal").classList.remove("hidden");
+      document.getElementById("addUserStatus").textContent = "";
+    });
+
+    document.getElementById("submitUserBtn").addEventListener("click", async () => {
+      const rl = document.getElementById("newUserRole").value;
+      const un = document.getElementById("newUserName").value.trim();
+      let pw = document.getElementById("newUserPass").value.trim();
+      const sc = document.getElementById("newUserScopes").value.trim().split(",").map(s=>s.trim());
+      const st = document.getElementById("addUserStatus");
+      if (!un) { st.textContent = "Username missing"; st.className="small err"; return; }
+      if (!pw) { pw = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10); }
+
+      try {
+        const res = await apiRequest("/admin/users", "POST", { username: un, password: pw, role: rl, scopes: sc });
+        document.getElementById("addUserModal").classList.add("hidden");
+        document.getElementById("newUserName").value = "";
+        document.getElementById("newUserPass").value = "";
+        
+        if (rl === "user") {
+          document.getElementById("generatedApiKey").textContent = res.api_key;
+          document.getElementById("showApiKeyModal").classList.remove("hidden");
+        }
+        loadData();
+      } catch(e) {
+        st.textContent = e.message; st.className="small err";
+      }
+    });
+
+    async function deleteUser(username) {
+      if(!confirm(`Really delete user ${username}?`)) return;
+      try {
+        await apiRequest(`/admin/users/${username}`, "DELETE");
+        loadData();
+      } catch(e) { alert(e.message); }
+    }
+  </script>
+</body>
+</html>
