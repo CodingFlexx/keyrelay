@@ -79,6 +79,18 @@ async def proxy_request(
 
     if service == "gemini":
         query_params["key"] = api_key
+        
+    if service == "trello":
+        query_params["key"] = api_key
+        # Check if we have token in metadata from the proxy setup
+        if metadata and metadata.get("token"):
+            query_params["token"] = metadata["token"]
+        else:
+            # Fallback to secondary secrets from DB (since token is sensitive)
+            from app.db import database
+            secondary_secrets = database.get_secondary_secrets(service)
+            if secondary_secrets and secondary_secrets.get("token"):
+                query_params["token"] = secondary_secrets["token"]
 
     forward_headers = {
         k: v

@@ -342,6 +342,67 @@ class TestProxyDynamicURLs:
         base = TARGETS["supabase"]
         assert "{project}" in base
 
+    def test_telegram_url_replaces_prefixed_dummy_token(self, mock_env_vars):
+        """Test Telegram paths with SDK token prefixes are normalized."""
+        from app.core.security import get_target_url
+
+        url = get_target_url(
+            "telegram",
+            "botDUMMY123/sendMessage",
+            {"token": "REAL123:token"},
+        )
+
+        assert url == "https://api.telegram.org/botREAL123:token/sendMessage"
+
+    def test_telegram_file_url_uses_file_prefix(self, mock_env_vars):
+        """Test Telegram file download paths use /file/bot<TOKEN>/... format."""
+        from app.core.security import get_target_url
+
+        url = get_target_url(
+            "telegram",
+            "file/botDUMMY123/photos/file_1.jpg",
+            {"token": "REAL123:token"},
+        )
+
+        assert url == "https://api.telegram.org/file/botREAL123:token/photos/file_1.jpg"
+
+    def test_stripe_files_uses_files_host(self, mock_env_vars):
+        """Test Stripe file endpoints route to files.stripe.com."""
+        from app.core.security import get_target_url
+
+        url = get_target_url("stripe", "files")
+        assert url == "https://files.stripe.com/v1/files"
+
+        url_with_version = get_target_url("stripe", "v1/files/file_123/contents")
+        assert url_with_version == "https://files.stripe.com/v1/files/file_123/contents"
+
+    def test_slack_file_paths_uses_files_host(self, mock_env_vars):
+        """Test Slack private file and upload paths route to files host."""
+        from app.core.security import get_target_url
+
+        files_pri_url = get_target_url("slack", "files-pri/T001-F001/report.pdf")
+        upload_url = get_target_url("slack", "upload/v1/ABC123")
+
+        assert files_pri_url == "https://files.slack.com/files-pri/T001-F001/report.pdf"
+        assert upload_url == "https://files.slack.com/upload/v1/ABC123"
+
+    def test_gemini_upload_path_uses_upload_root(self, mock_env_vars):
+        """Test Gemini upload paths avoid duplicated v1beta segments."""
+        from app.core.security import get_target_url
+
+        url = get_target_url("gemini", "upload/v1beta/files")
+        assert url == "https://generativelanguage.googleapis.com/upload/v1beta/files"
+
+    def test_github_release_asset_upload_uses_uploads_host(self, mock_env_vars):
+        """Test GitHub release asset uploads route to uploads.github.com."""
+        from app.core.security import get_target_url
+
+        url = get_target_url(
+            "github", 
+            "repos/owner/repo/releases/123/assets"
+        )
+        assert url == "https://uploads.github.com/repos/owner/repo/releases/123/assets"
+
 
 @pytest.mark.integration
 class TestProxyMethods:
@@ -464,6 +525,24 @@ class TestProxyServiceSpecific:
         assert response.status_code == 200
         # Check that key is in query params
         assert "key=gemini-key" in str(route.calls[0].request.url)
+
+    @respx.mock
+    def test_trello_query_param_auth(self, mock_env_vars):
+        """Test Trello API key and token in query params."""
+        import app.db.database as database
+        database.add_api_key("trello", "trello-api-key", {"token": "trello-user-token"})
+        from app.main import app
+        
+        route = respx.get("https://api.trello.com/1/members/me").mock(
+            return_value=Response(200, json={"id": "user123"})
+        )
+        
+        client = TestClient(app)
+        response = client.get("/trello/members/me")
+        
+        assert response.status_code == 200
+        assert "key=trello-api-key" in str(route.calls[0].request.url)
+        assert "token=trello-user-token" in str(route.calls[0].request.url)
     
     @respx.mock
     def test_openrouter_extra_headers(self, mock_env_vars):

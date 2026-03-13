@@ -5,6 +5,15 @@ from typing import Any, Dict, Optional
 from app.core.config import TARGETS, SERVICE_CONFIGS
 
 
+def _strip_prefixed_token_segment(path: str, prefix: str) -> str:
+    """Strip leading '<prefix><token>/' segment from a path when present."""
+    normalized_path = path.lstrip("/")
+    first_segment, separator, remainder = normalized_path.partition("/")
+    if separator and first_segment.startswith(prefix):
+        return remainder
+    return normalized_path
+
+
 def env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -33,6 +42,8 @@ def get_auth_header(service: str, api_key: str, metadata: Optional[Dict[str, Any
         return f"token {api_key}"
     if service == "telegram":
         return None
+    if service == "trello":
+        return None
 
     config = SERVICE_CONFIGS.get(service, {})
     auth_type = config.get("auth_type", "bearer")
@@ -51,6 +62,7 @@ def get_auth_header(service: str, api_key: str, metadata: Optional[Dict[str, Any
 def get_target_url(service: str, path: str, metadata: Optional[Dict[str, Any]] = None) -> str:
     """Build target URL with dynamic substitutions."""
     base = TARGETS.get(service, "")
+    normalized_path = path.lstrip("/")
 
     if metadata and metadata.get("base_url"):
         base = metadata["base_url"]
@@ -70,11 +82,32 @@ def get_target_url(service: str, path: str, metadata: Optional[Dict[str, Any]] =
             base = base.replace("{shop}", str(metadata["shop"]))
 
     if service == "telegram" and metadata and metadata.get("token"):
-        return f"{base}/bot{metadata['token']}/{path}"
+        normalized_path = _strip_prefixed_token_segment(normalized_path, "bot")
+        if normalized_path.startswith("file/"):
+            file_path = _strip_prefixed_token_segment(normalized_path[5:], "bot")
+            return f"{base}/file/bot{metadata['token']}/{file_path}"
+        return f"{base}/bot{metadata['token']}/{normalized_path}"
+
+    if service == "stripe":
+        stripe_path = normalized_path[3:] if normalized_path.startswith("v1/") else normalized_path
+        if stripe_path.startswith("files"):
+            return f"https://files.stripe.com/v1/{stripe_path}"
+
+    if service == "slack":
+        if normalized_path.startswith(("files-pri/", "upload/")):
+            return f"https://files.slack.com/{normalized_path}"
+
+    if service == "gemini":
+        if normalized_path.startswith("upload/"):
+            return f"https://generativelanguage.googleapis.com/{normalized_path}"
+
+    if service == "github":
+        if "/releases/" in normalized_path and "/assets" in normalized_path:
+            return f"https://uploads.github.com/{normalized_path}"
 
     if service == "chroma":
         chroma_host = os.getenv("CHROMA_HOST", "localhost")
         chroma_port = os.getenv("CHROMA_PORT", "8000")
         base = f"http://{chroma_host}:{chroma_port}"
 
-    return f"{base}/{path}"
+    return f"{base}/{normalized_path}"
