@@ -13,11 +13,11 @@ COPY entrypoint.sh .
 COPY secrets.json.example secrets.json.example
 
 # Persistent data directory for vault.db
-RUN mkdir -p /workspace/data
-ENV AGENT_VAULT_APP_DIR=/workspace/data
+RUN mkdir -p /app/data
+ENV AGENT_VAULT_APP_DIR=/app/data
 
 # Non-root user for security
-RUN chmod +x /workspace/entrypoint.sh && useradd -m -u 1000 appuser && chown -R appuser:appuser /workspace
+RUN chmod +x /workspace/entrypoint.sh && useradd -m -u 1000 appuser && chown -R appuser:appuser /workspace /app/data
 USER appuser
 
 # Expose port
